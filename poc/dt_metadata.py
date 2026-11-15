@@ -366,6 +366,35 @@ def resolve_upload_layout(row, upload_entry, user_id, candidate_rows):
     return title_id, layout
 
 
+def load_selected_manifest(assets, entry_id, source_metadata, user_id):
+    if entry_id is None:
+        return load_manifest(assets, None, expected_user_id=user_id)
+    db = sqlite3.connect(source_metadata)
+    try:
+        row = db.execute(
+            "SELECT path FROM dir_entry_info_tbl WHERE id = ? AND target_type = 3", (entry_id,)
+        ).fetchone()
+    finally:
+        db.close()
+    if row is None:
+        return load_manifest(assets, entry_id, expected_user_id=user_id)
+    identity = save_identity(row[0], is_directory=True)
+    manifest = json.loads((Path(assets).expanduser() / "manifest.json").read_text())
+    matches = []
+    for local_id, candidate in manifest.items():
+        if not local_id.isdigit():
+            continue
+        files = candidate.get("files", [])
+        identities = {save_identity(item["path"]) for item in files}
+        if identities == {identity}:
+            matches.append(int(local_id))
+    if len(matches) > 1:
+        raise ValueError(f"multiple downloaded saves match metadata entry {entry_id}")
+    if matches:
+        return load_manifest(assets, matches[0], expected_user_id=user_id)
+    return load_manifest(assets, entry_id, expected_user_id=user_id)
+
+
 def create_filtered_metadata(
     output, source_metadata, user_id, user_name, entry_ids, assets, manifest_output=None
 ):
@@ -374,7 +403,7 @@ def create_filtered_metadata(
         entry_ids = [None]
     upload_entries = {}
     for entry_id in entry_ids:
-        actual_id, entry = load_manifest(assets, entry_id, expected_user_id=user_id)
+        actual_id, entry = load_selected_manifest(assets, entry_id, source_metadata, user_id)
         upload_entries[actual_id] = entry
     output = Path(output).expanduser()
     source_metadata = Path(source_metadata).expanduser()

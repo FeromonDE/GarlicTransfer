@@ -280,6 +280,26 @@ class MetadataSafetyTests(unittest.TestCase):
             self.assertEqual(row, (current_id, f"/user/home/{USER_ID}/savedata_prospero/{TITLE_ID}/"))
             self.assertIn((TITLE_ID, USER_ID, ""), index_downloaded_manifests(assets))
 
+    def test_current_console_entry_id_selects_the_downloaded_identity(self):
+        import sqlite3
+        from contextlib import closing
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, assets, source = self.make_case(folder)
+            current_id = 136
+            with closing(sqlite3.connect(source)) as db:
+                db.execute("UPDATE dir_entry_info_tbl SET id = ? WHERE id = ?", (current_id, ENTRY_ID))
+                db.commit()
+
+            create_filtered_metadata(
+                root / "generated.db", source, USER_ID, "test-user", [current_id],
+                assets, root / "generated-manifest.json",
+            )
+            generated = json.loads((root / "generated-manifest.json").read_text())
+            self.assertEqual(list(generated), [str(current_id)])
+            item = generated[str(current_id)]["files"][0]
+            self.assertEqual(struct.unpack_from("<I", bytes.fromhex(item["header"]), 4)[0], current_id)
+
 
 if __name__ == "__main__":
     unittest.main()
