@@ -158,6 +158,15 @@ function hideUploadModal() {
   if (controls.uploadModal.open) controls.uploadModal.close();
 }
 
+function resetUploadUI() {
+  pendingUploadOptions = null;
+  dataTransferArmedHost = null;
+  hideUploadModal();
+  controls.confirmUploadBtn.hidden = true;
+  controls.userSelectLabel.hidden = true;
+  controls.uploadSaveSelectLabel.hidden = true;
+}
+
 function hideImportModal() {
   if (controls.importModal.open) controls.importModal.close();
   pendingImport = null;
@@ -813,6 +822,7 @@ window.saveTransfer.onEvent((event) => {
     if (mode === 'finish') dataTransferArmedHost = null;
     activeTransfer = null;
     availableUsers = event.users || availableUsers;
+    if (mode === 'upload') resetUploadUI();
     if (mode === 'download') {
       dataTransferArmedHost = browserHost;
       for (const id of event.entryIds || requestedDownloadIds) downloadedEntryIds.add(id);
