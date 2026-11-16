@@ -22,6 +22,7 @@ class AppInventoryTests(unittest.TestCase):
                     (349, "/user/app/PPSA98513/", 43763, 1),
                     (348, "/user/app/PPSA98513/sce_sys/", 16633876, 1),
                     (122, "/user/home/18c60ea2/savedata_prospero/PPSA21564/", 20971520, 3),
+                    (126, "/user/home/18c60ea2/savedata_prospero_for_cloud/syndy_auto_sync/", 65536, 3),
                     (87, "/user/av_contents/", 1056720102, 2),
                     (5, "/system_data/priv/appmeta/NPXS40074/", 160, 1),
                     (205, "/user/playgo/app/IV0005-PPSA01385_00-DIAGQAINSPECTION/00/", 2156, 1),
@@ -32,18 +33,34 @@ class AppInventoryTests(unittest.TestCase):
             db.commit()
             db.close()
 
+            entry_directory = Path(folder) / "126"
+            entry_directory.mkdir()
+            (entry_directory / "save.bin").write_bytes(b"cloud")
+            (entry_directory / "manifest.json").write_text(json.dumps({
+                "126": {
+                    "files": [{
+                        "path": "/user/home/18c60ea2/savedata_prospero_for_cloud/syndy_auto_sync/save.bin",
+                        "file": "save.bin",
+                        "header": "aa",
+                    }],
+                    "final_header": "bb",
+                },
+            }))
+
             output = io.StringIO()
             with redirect_stdout(output):
                 list_inventory(path)
             event = json.loads(output.getvalue())
             self.assertEqual(event["type"], "inventory")
-            self.assertEqual([entry["id"] for entry in event["entries"]], [1, 5, 87, 122, 205, 348, 349])
+            self.assertEqual([entry["id"] for entry in event["entries"]], [1, 5, 87, 122, 126, 205, 348, 349])
             entries = {entry["id"]: entry for entry in event["entries"]}
             self.assertEqual(entries[1]["kind"], "profile")
             self.assertEqual(entries[5]["kind"], "other")
             self.assertEqual(entries[87]["kind"], "media")
             self.assertEqual(entries[122]["kind"], "save")
             self.assertEqual(entries[122]["owner"], "18c60ea2")
+            self.assertEqual(entries[126]["kind"], "save")
+            self.assertFalse(entries[126]["downloaded"])
             self.assertEqual(entries[205]["kind"], "other")
             self.assertEqual(entries[348]["kind"], "app")
             self.assertEqual(entries[349]["kind"], "app")

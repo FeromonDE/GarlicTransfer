@@ -386,6 +386,7 @@ function startUpload(options) {
       DT_PORT: String(options.sourcePort || 1004),
       DT_DATA_PORT: String(options.dataPort || 1005),
       DT_DISCOVERY_PORT: String(options.discoveryPort || 1006),
+      DT_HOST_NAME: String(options.uploadDisplayName || 'GarlicTransfer'),
       // ensureOracle() has already resolved these: for the volunteer oracle it
       // points at the local relay it just started, otherwise at the configured
       // console.  dt_source used to fall back to its own 192.168.0.125:9022

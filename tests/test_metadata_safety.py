@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from poc.dt_backend import index_downloaded_manifests
-from poc.dt_metadata import create_metadata, create_filtered_metadata
+from poc.dt_metadata import create_metadata, create_filtered_metadata, load_selected_manifest, remap_upload_entry
 
 
 USER_ID = "138c0dbf"
@@ -110,6 +110,12 @@ class MetadataSafetyTests(unittest.TestCase):
             self.assertEqual(item["size"], len(payload))
             self.assertEqual(item["sha256"], hashlib.sha256(payload).hexdigest())
             self.assertEqual(struct.unpack_from("<Q", bytes.fromhex(item["header"]), 240)[0], len(payload))
+            for manifest_path in (assets / "manifest.json", assets / str(ENTRY_ID) / "manifest.json"):
+                local = json.loads(manifest_path.read_text())
+                local_item = local[str(ENTRY_ID)]["files"][0]
+                self.assertEqual(local_item["size"], len(payload))
+                self.assertEqual(local_item["sha256"], hashlib.sha256(payload).hexdigest())
+                self.assertEqual(struct.unpack_from("<Q", bytes.fromhex(local_item["header"]), 240)[0], len(payload))
             with closing(sqlite3.connect(output)) as db:
                 sizes = db.execute(
                     "SELECT actual_size, transfer_size, required_size FROM dir_entry_info_tbl"
@@ -280,6 +286,22 @@ class MetadataSafetyTests(unittest.TestCase):
             self.assertEqual(row, (current_id, f"/user/home/{USER_ID}/savedata_prospero/{TITLE_ID}/"))
             self.assertIn((TITLE_ID, USER_ID, ""), index_downloaded_manifests(assets))
 
+            import os
+            from unittest.mock import patch
+            from poc import dt_source
+
+            self.assertEqual(generated[str(current_id)]["source_id"], ENTRY_ID)
+            environment = {
+                "DT_ASSETS": str(assets),
+                "DT_MANIFEST": str(root / "generated-manifest.json"),
+                "DT_METADATA": str(output),
+            }
+            with patch.dict(os.environ, environment), \
+                 patch.object(dt_source, "send_record") as send_record:
+                dt_source.send_save_chunks(None, None, None, 0, 2, current_id)
+            self.assertEqual(send_record.call_count, 3)
+            self.assertEqual(send_record.call_args_list[1].args[4], b"12345678")
+
     def test_current_console_entry_id_selects_the_downloaded_identity(self):
         import sqlite3
         from contextlib import closing
@@ -299,6 +321,69 @@ class MetadataSafetyTests(unittest.TestCase):
             self.assertEqual(list(generated), [str(current_id)])
             item = generated[str(current_id)]["files"][0]
             self.assertEqual(struct.unpack_from("<I", bytes.fromhex(item["header"]), 4)[0], current_id)
+
+    def test_duplicate_download_identities_use_the_newest_manifest(self):
+        import os
+        import sqlite3
+        from contextlib import closing
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, assets, source = self.make_case(folder)
+            older_id = 121
+            manifest_path = assets / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            older_entry = remap_upload_entry(manifest[str(ENTRY_ID)], older_id)
+            manifest[str(older_id)] = older_entry
+            manifest_path.write_text(json.dumps(manifest))
+
+            older_directory = assets / str(older_id)
+            older_directory.mkdir()
+            (older_directory / "manifest.json").write_text(json.dumps({
+                "entry_id": older_id,
+                "files": older_entry["files"],
+                str(older_id): older_entry,
+            }))
+            (older_directory / "save.bin").write_bytes(b"12345678")
+            (older_directory / "manifest.json").touch()
+            os.utime(older_directory / "manifest.json", ns=(1_000_000_000, 1_000_000_000))
+            os.utime(assets / str(ENTRY_ID) / "manifest.json", ns=(2_000_000_000, 2_000_000_000))
+
+            current_id = 136
+            with closing(sqlite3.connect(source)) as db:
+                db.execute("UPDATE dir_entry_info_tbl SET id = ? WHERE id = ?", (current_id, ENTRY_ID))
+                db.commit()
+            actual_id, _ = load_selected_manifest(assets, current_id, source, USER_ID)
+            self.assertEqual(actual_id, ENTRY_ID)
+
+    def test_cloud_metadata_rows_do_not_block_save_uploads(self):
+        import sqlite3
+        from contextlib import closing
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, assets, source = self.make_case(folder)
+            current_id = 136
+            with closing(sqlite3.connect(source)) as db:
+                db.execute("UPDATE dir_entry_info_tbl SET id = ? WHERE id = ?", (current_id, ENTRY_ID))
+                db.execute(
+                    "INSERT INTO dir_entry_info_tbl VALUES (126, ?, 1, 3, 0, '', '', 8, 8, 8, 0)",
+                    (f"/user/home/{USER_ID}/savedata_prospero_for_cloud/syndy_auto_sync/",),
+                )
+                db.commit()
+
+            manifest_path = assets / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["126"] = {
+                "files": [{
+                    "path": f"/user/home/{USER_ID}/savedata_prospero_for_cloud/syndy_auto_sync/save.bin",
+                }],
+            }
+            manifest_path.write_text(json.dumps(manifest))
+
+            output = create_filtered_metadata(
+                root / "generated.db", source, USER_ID, "test-user", [current_id],
+                assets, root / "generated-manifest.json",
+            )
+            self.assertTrue(output.is_file())
 
 
 if __name__ == "__main__":

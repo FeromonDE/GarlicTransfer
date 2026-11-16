@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 from poc.dt_download import DtChannel, discovery_versions, download_entry, download_metadata, launch_console
-from poc.dt_metadata import save_identity
+from poc.dt_metadata import optional_save_identity
 from poc.dt_ppr_power import CAPTURED_BODY
 
 # The legacy captured identity carries its own console's account hash and host ID,
@@ -147,7 +147,9 @@ def index_downloaded_manifests(output):
                        for item in files):
                 continue
             combined[str(entry_id)] = {"files": files, "final_header": final_header}
-            downloaded.add(save_identity(files[0]["path"]))
+            identity = optional_save_identity(files[0]["path"])
+            if identity is not None:
+                downloaded.add(identity)
         except (OSError, ValueError, KeyError, TypeError):
             continue
     (output / "manifest.json").write_text(json.dumps(combined, indent=2) + "\n")
@@ -269,7 +271,7 @@ def download(options):
                 "kind": kind,
                 "owner": parts[2] if kind == "save" and len(parts) > 2 else "console",
                 "size": size,
-                "downloaded": kind == "save" and save_identity(path, is_directory=True) in downloaded_ids,
+                "downloaded": kind == "save" and optional_save_identity(path, is_directory=True) in downloaded_ids,
             })
         emit("entries", entries=entries, users=users)
         if options.get("metadataOnly"):
@@ -386,7 +388,7 @@ def list_inventory(path):
             "kind": kind,
             "owner": parts[2] if kind == "save" and len(parts) > 2 else "console",
             "size": size,
-            "downloaded": kind == "save" and save_identity(save_path, is_directory=True) in downloaded_ids,
+            "downloaded": kind == "save" and optional_save_identity(save_path, is_directory=True) in downloaded_ids,
         })
     emit("inventory", entries=entries, users=users)
 

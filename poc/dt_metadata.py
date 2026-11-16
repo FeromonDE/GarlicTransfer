@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -107,6 +108,28 @@ def write_upload_manifest(output, entries):
     output.write_text(json.dumps({str(entry_id): entry for entry_id, entry in entries.items()}, indent=2) + "\n")
 
 
+def write_json_replace(path, document):
+    path = Path(path)
+    temporary = path.with_name(path.name + ".upload.tmp")
+    temporary.write_text(json.dumps(document, indent=2) + "\n")
+    os.replace(temporary, path)
+
+
+def persist_manifest_entry(assets, entry_id, entry):
+    assets = Path(assets).expanduser()
+    root_path = assets / "manifest.json"
+    document = json.loads(root_path.read_text()) if root_path.is_file() else {}
+    document[str(entry_id)] = entry
+    write_json_replace(root_path, document)
+
+    entry_path = assets / str(entry_id) / "manifest.json"
+    document = json.loads(entry_path.read_text()) if entry_path.is_file() else {}
+    document["entry_id"] = entry_id
+    document["files"] = entry["files"]
+    document[str(entry_id)] = entry
+    write_json_replace(entry_path, document)
+
+
 def backup_size(files):
     return sum(
         int(item["size"])
@@ -201,7 +224,14 @@ def save_identity(path, is_directory=False):
     raise ValueError(f"cannot determine a stable save identity from {path}")
 
 
-def remap_upload_entry(entry, entry_id):
+def optional_save_identity(path, is_directory=False):
+    try:
+        return save_identity(path, is_directory)
+    except ValueError:
+        return None
+
+
+def remap_upload_entry(entry, entry_id, source_id=None):
     remapped = json.loads(json.dumps(entry))
     for item in remapped["files"]:
         header = bytearray.fromhex(item["header"])
@@ -210,6 +240,8 @@ def remap_upload_entry(entry, entry_id):
     final_header = bytearray.fromhex(remapped["final_header"])
     struct.pack_into("<I", final_header, 4, entry_id)
     remapped["final_header"] = final_header.hex()
+    if source_id is not None:
+        remapped["source_id"] = source_id
     return remapped
 
 
@@ -229,6 +261,7 @@ def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user
     user_id = validate_user(user_id, user_name)
     target_user = find_downloaded_user(source_metadata, user_id)
     entry_id, upload_entry = load_manifest(assets, entry_id, expected_user_id=user_id)
+    persist_manifest_entry(assets, entry_id, upload_entry)
     files = upload_entry["files"]
     title_id = infer_title_id(title_id, files)
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
@@ -378,20 +411,34 @@ def load_selected_manifest(assets, entry_id, source_metadata, user_id):
         db.close()
     if row is None:
         return load_manifest(assets, entry_id, expected_user_id=user_id)
-    identity = save_identity(row[0], is_directory=True)
-    manifest = json.loads((Path(assets).expanduser() / "manifest.json").read_text())
+    identity = optional_save_identity(row[0], is_directory=True)
+    if identity is None:
+        return load_manifest(assets, entry_id, expected_user_id=user_id)
+    assets = Path(assets).expanduser()
+    manifest = json.loads((assets / "manifest.json").read_text())
     matches = []
     for local_id, candidate in manifest.items():
         if not local_id.isdigit():
             continue
         files = candidate.get("files", [])
-        identities = {save_identity(item["path"]) for item in files}
+        if not isinstance(files, list):
+            continue
+        identities = {
+            item_identity
+            for item in files
+            if isinstance(item, dict)
+            and (item_identity := optional_save_identity(item.get("path", ""))) is not None
+        }
         if identities == {identity}:
             matches.append(int(local_id))
-    if len(matches) > 1:
-        raise ValueError(f"multiple downloaded saves match metadata entry {entry_id}")
+
+    def downloaded_at(local_id):
+        path = assets / str(local_id) / "manifest.json"
+        return path.stat().st_mtime_ns if path.is_file() else 0
+
     if matches:
-        return load_manifest(assets, matches[0], expected_user_id=user_id)
+        local_id = max(matches, key=lambda value: (downloaded_at(value), value))
+        return load_manifest(assets, local_id, expected_user_id=user_id)
     return load_manifest(assets, entry_id, expected_user_id=user_id)
 
 
@@ -404,6 +451,7 @@ def create_filtered_metadata(
     upload_entries = {}
     for entry_id in entry_ids:
         actual_id, entry = load_selected_manifest(assets, entry_id, source_metadata, user_id)
+        persist_manifest_entry(assets, actual_id, entry)
         upload_entries[actual_id] = entry
     output = Path(output).expanduser()
     source_metadata = Path(source_metadata).expanduser()
@@ -424,7 +472,10 @@ def create_filtered_metadata(
             if len(identities) != 1:
                 raise ValueError(f"entry {actual_id} contains files from multiple save identities")
             identity = identities.pop()
-            matches = [row for row in candidate_rows if save_identity(row[1], is_directory=True) == identity]
+            matches = [
+                row for row in candidate_rows
+                if optional_save_identity(row[1], is_directory=True) == identity
+            ]
             if len(matches) != 1:
                 raise ValueError(
                     f"{identity[0]} is absent from the current console metadata or has multiple matching entries; "
@@ -434,7 +485,7 @@ def create_filtered_metadata(
                 raise ValueError(f"multiple selected saves map to metadata entry {matches[0][0]}")
             matched_rows[matches[0][0]] = (actual_id, matches[0])
         upload_entries = {
-            current_id: remap_upload_entry(upload_entries[actual_id], current_id)
+            current_id: remap_upload_entry(upload_entries[actual_id], current_id, actual_id)
             for current_id, (actual_id, _) in matched_rows.items()
         }
         rows = sorted((match for _, match in matched_rows.values()), key=lambda row: row[0])
