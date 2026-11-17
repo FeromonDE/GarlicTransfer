@@ -2,7 +2,7 @@
 
 Upload and Download PS5 saves to a latest firmware console. Without a jailbreak.
 
-**Alpha release — 0.2.26**
+**Alpha release — 0.2.27**
 
 GarlicTransfer is an Electron application for downloading PS5 save containers to a PC and uploading selected saves back to a console through Sony's Data Transfer protocol. It supports local PPR oracles on a jailbroken PS5 and volunteer workers through HTOS.
 
@@ -15,6 +15,7 @@ This is research software. Back up your saves before using Upload. Upload can ov
 - Offline PS4/PS5 title names from [PlayStation-Titles](https://github.com/andshrew/PlayStation-Titles).
 - A persistent console-to-PC session: browse once, then download one or more saves without re-entering Data Transfer mode.
 - Multi-save upload selection with filtered metadata and selectable destination users.
+- External single-save and multi-file folder uploads for one PPSA title, with per-file transfer metadata and fresh staging.
 - A local-save library with per-file export and confirmed import replacement.
 - Filtered upload metadata and save-only transfer behavior based on a captured working transfer.
 - Automatic source power signal and optional clean `DisconnectPS5` reboot after downloading.

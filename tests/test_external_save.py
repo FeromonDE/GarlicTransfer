@@ -12,6 +12,42 @@ from poc.dt_metadata import create_external_save
 
 
 class ExternalSaveTests(unittest.TestCase):
+    def test_folder_groups_multiple_files_and_streams_each(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            images = root / "PPSA12345"
+            images.mkdir()
+            (images / "sdimg_one").write_bytes(b"first")
+            (images / "sdimg_two").write_bytes(b"second")
+            assets = root / "cache"
+            output = root / "metadata.db"
+            manifest_path = root / "upload.json"
+            create_external_save(output, "18c60ea2", "PPSA12345", images, assets,
+                                 manifest_output=manifest_path)
+            manifest = json.loads(manifest_path.read_text())
+            files = manifest[str(0x10000)]["files"]
+            self.assertEqual([item["file"] for item in files], ["sdimg_one", "sdimg_two"])
+            with sqlite3.connect(output) as db:
+                self.assertEqual(db.execute("SELECT actual_size FROM dir_entry_info_tbl").fetchall(), [(11,)])
+            with patch.dict(os.environ, {"DT_ASSETS": str(assets), "DT_METADATA": str(output),
+                                        "DT_MANIFEST": str(manifest_path), "DT_UPLOAD_KIND": "save"}), patch.object(dt_source, "send_record") as send:
+                dt_source.send_save_chunks(None, None, None, 0, 2, 0x10000)
+            self.assertEqual(send.call_count, 5)
+            self.assertEqual(send.call_args_list[1].args[4], b"first")
+            self.assertEqual(send.call_args_list[3].args[4], b"second")
+            self.assertEqual((images / "sdimg_one").read_bytes(), b"first")
+
+    def test_folder_rejects_empty_or_nested_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            images = root / "input"
+            images.mkdir()
+            with self.assertRaisesRegex(ValueError, "missing or empty"):
+                create_external_save(root / "out.db", "18c60ea2", "PPSA12345", images, root / "cache")
+            (images / "nested").mkdir()
+            with self.assertRaisesRegex(ValueError, "without subfolders"):
+                create_external_save(root / "out.db", "18c60ea2", "PPSA12345", images, root / "cache")
+
     def test_new_container_creates_uploadable_library_entry(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

@@ -10,6 +10,22 @@ from poc.dt_backend import list_inventory
 
 
 class AppInventoryTests(unittest.TestCase):
+    def test_missing_metadata_is_not_created(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "missing.db"
+            with self.assertRaisesRegex(ValueError, "Browse console saves again"):
+                list_inventory(path)
+            self.assertFalse(path.exists())
+
+    def test_wrong_schema_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "wrong.db"
+            db = sqlite3.connect(path)
+            db.execute("CREATE TABLE unrelated (id)")
+            db.close()
+            with self.assertRaisesRegex(ValueError, "Invalid transfer metadata"):
+                list_inventory(path)
+
     def test_all_entry_types_are_categorized(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "metadata.db"

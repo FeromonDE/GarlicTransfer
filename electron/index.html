@@ -53,6 +53,14 @@
         <label id="uploadSaveSelectLabel" hidden>Upload entries (Ctrl/Cmd-click to select multiple)
           <select id="uploadSaveSelect" multiple size="6"></select>
         </label>
+        <div id="externalUploadControls" hidden>
+          <button id="addExternalSaveBtn" class="secondary" type="button">Add external save…</button>
+          <button id="addExternalFolderBtn" class="secondary" type="button">Add save folder…</button>
+          <label>Game title ID (for external save)
+            <input id="externalTitleId" placeholder="PPSA12345" maxlength="9">
+          </label>
+          <p>Choose one encrypted PS5 save file, or a folder containing multiple encrypted files for the same PPSA title. Keep original filenames. No subfolders.</p>
+        </div>
         <button id="confirmUploadBtn" class="primary" hidden>Upload</button>
       </section>
 

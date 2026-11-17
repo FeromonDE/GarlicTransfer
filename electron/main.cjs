@@ -331,7 +331,7 @@ function createMetadata(options) {
     fs.mkdirSync(options.output, { recursive: true });
     const generatedMetadata = path.join(options.output, 'generated-metadata.db');
     const generatedManifest = path.join(options.output, 'generated-upload-manifest.json');
-    if (options.uploadKind === 'external') options.assets = path.join(options.output, 'external-save');
+    if (options.uploadKind === 'external') options.assets = path.join(options.output, `external-save-${Date.now()}`);
     const args = [
       '-m', 'poc.dt_metadata',
       '--output', generatedMetadata,
@@ -520,6 +520,11 @@ ipcMain.handle('dialog:metadata', async () => {
 });
 
 ipcMain.handle('dialog:assets', async () => {
+  const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('dialog:external-folder', async () => {
   const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
   return result.canceled ? null : result.filePaths[0];
 });

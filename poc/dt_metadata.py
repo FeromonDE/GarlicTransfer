@@ -320,41 +320,49 @@ def create_external_save(output, user_id, title_id, image_path, assets, user_nam
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
         raise ValueError("title ID must be exactly 9 letters or digits")
     image_path = Path(image_path).expanduser()
-    if not image_path.is_file() or image_path.stat().st_size <= 0:
-        raise ValueError("external save container is missing or empty")
+    if image_path.is_dir():
+        images = sorted(image_path.iterdir(), key=lambda item: item.name)
+        if any(item.is_symlink() or not item.is_file() for item in images):
+            raise ValueError("Choose a folder containing only encrypted save files, without subfolders or links")
+    else:
+        images = [image_path]
+    if not images or any(not image.is_file() or image.stat().st_size <= 0 for image in images):
+        raise ValueError("external save files are missing or empty")
+    if any(image.name.lower() == "manifest.json" for image in images):
+        raise ValueError("Choose only encrypted save files; manifest.json is reserved")
+    if len({image.name.casefold() for image in images}) != len(images):
+        raise ValueError("external save filenames must be unique ignoring case")
     entry_id = 0x10000
     assets = Path(assets).expanduser()
     entry_directory = assets / str(entry_id)
     entry_directory.mkdir(parents=True, exist_ok=True)
-    destination = entry_directory / image_path.name
-    if image_path.resolve() != destination.resolve():
-        shutil.copyfile(image_path, destination)
-    source_path = f"/user/home/{user_id}/savedata_prospero/{title_id}/{image_path.name}"
-    header = bytearray(1304)
-    struct.pack_into("<I", header, 0, 0x35504647)
-    struct.pack_into("<I", header, 4, entry_id)
-    # GFP5 repeats file size in the leading record and stat fields.
-    size = destination.stat().st_size
-    struct.pack_into("<Q", header, 0x20, size)
-    struct.pack_into("<Q", header, 0xF0, size)
-    # S_IFREG | 0600: a regular private save file, not a host OS mode.
-    struct.pack_into("<H", header, 0x110, 0x8180)
-    header[276:276 + len(source_path)] = source_path.encode()
+    items = []
+    for image in images:
+        destination = entry_directory / image.name
+        source_path = f"/user/home/{user_id}/savedata_prospero/{title_id}/{image.name}"
+        encoded_path = source_path.encode()
+        if len(encoded_path) >= 1024:
+            raise ValueError("external save filename is too long")
+        if image.resolve() != destination.resolve():
+            shutil.copyfile(image, destination)
+        header = bytearray(1304)
+        struct.pack_into("<I", header, 0, 0x35504647)
+        struct.pack_into("<I", header, 4, entry_id)
+        size = destination.stat().st_size
+        struct.pack_into("<Q", header, 0x20, size)
+        struct.pack_into("<Q", header, 0xF0, size)
+        struct.pack_into("<H", header, 0x110, 0x8180)
+        header[276:276 + len(encoded_path)] = encoded_path
+        items.append({"path": source_path, "file": image.name, "size": size,
+                      "sha256": "", "header": header.hex()})
     final_header = bytearray(1304)
     struct.pack_into("<I", final_header, 0, 0x35504647)
     struct.pack_into("<I", final_header, 4, entry_id)
     final_header[274] = 1
-    item = {
-        "path": source_path,
-        "file": image_path.name,
-        "size": destination.stat().st_size,
-        "sha256": "",
-        "header": header.hex(),
-    }
     manifest = {
         "entry_id": entry_id,
-        "files": [item],
-        str(entry_id): {"files": [item], "final_header": final_header.hex()},
+        "files": items,
+        str(entry_id): {"files": items, "final_header": final_header.hex()},
     }
     (entry_directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return create_metadata(

@@ -363,7 +363,14 @@ def list_users(path):
 
 
 def list_inventory(path):
-    db = sqlite3.connect(path)
+    metadata_path = Path(path).expanduser().resolve()
+    if not metadata_path.is_file() or metadata_path.stat().st_size == 0:
+        raise ValueError(f"Metadata missing or empty: {metadata_path}. Browse console saves again.")
+    db = sqlite3.connect(metadata_path.as_uri() + "?mode=ro", uri=True)
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if not {"dir_entry_info_tbl", "user_info_tbl"}.issubset(tables):
+        db.close()
+        raise ValueError(f"Invalid transfer metadata: {metadata_path}. Browse console saves again.")
     rows = db.execute(
         "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
     ).fetchall()

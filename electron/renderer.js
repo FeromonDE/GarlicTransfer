@@ -4,7 +4,7 @@ for (const id of [
   'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
-  'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
+  'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
   'consoleSelect', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
@@ -12,6 +12,7 @@ for (const id of [
 ]) controls[id] = byId(id);
 let activeTransfer = null;
 let pendingImport = null;
+let externalUploadImage = null;
 let availableUsers = [];
 let availableEntries = [];
 let requestedDownloadIds = [];
@@ -112,6 +113,9 @@ function updateSelection() {
 function busy(value) {
   controls.downloadBtn.disabled = value;
   controls.uploadBtn.disabled = value;
+  controls.addExternalSaveBtn.disabled = value;
+  controls.addExternalFolderBtn.disabled = value;
+  controls.externalTitleId.disabled = value;
   controls.browseLocalBtn.disabled = value;
   for (const button of document.querySelectorAll('.local-action')) button.disabled = value;
   controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || value || browseSessionActive;
@@ -160,6 +164,8 @@ function hideUploadModal() {
 
 function resetUploadUI() {
   pendingUploadOptions = null;
+  externalUploadImage = null;
+  controls.externalUploadControls.hidden = true;
   dataTransferArmedHost = null;
   hideUploadModal();
   controls.confirmUploadBtn.hidden = true;
@@ -428,8 +434,14 @@ async function startDownload(entryIds) {
 
 async function startUploadSource() {
   const selectedUser = controls.userSelect.selectedOptions[0];
-  const entryIds = [...controls.uploadSaveSelect.selectedOptions].map((option) => Number(option.value));
-  if (!selectedUser || !entryIds.length) {
+  const externalSelected = [...controls.uploadSaveSelect.selectedOptions].some((option) => option.value === 'external');
+  const entryIds = [...controls.uploadSaveSelect.selectedOptions].filter((option) => option.value !== 'external').map((option) => Number(option.value));
+  const titleId = controls.externalTitleId.value.trim().toUpperCase();
+  if (externalSelected && (entryIds.length || !externalUploadImage || !/^PPSA[0-9]{5}$/.test(titleId))) {
+    status('Select the external save by itself and enter its PPSA title ID (for example PPSA12345).');
+    return;
+  }
+  if (!selectedUser || (!entryIds.length && !externalSelected)) {
     status('Select one user and at least one downloaded entry before continuing.');
     return;
   }
@@ -437,7 +449,7 @@ async function startUploadSource() {
     const entry = availableEntries.find((candidate) => candidate.id === id);
     return entry?.kind === 'save' ? 'save' : 'other';
   }));
-  if (uploadKinds.size !== 1) {
+  if (!externalSelected && uploadKinds.size !== 1) {
     status('Upload saves and other content in separate batches.');
     return;
   }
@@ -446,7 +458,9 @@ async function startUploadSource() {
     userId: selectedUser.value,
     userName: selectedUser.dataset.name || 'user',
     entryIds,
-    uploadKind: uploadKinds.values().next().value,
+    uploadKind: externalSelected ? 'external' : uploadKinds.values().next().value,
+    externalImage: externalSelected ? externalUploadImage : undefined,
+    titleId: externalSelected ? titleId : undefined,
   };
   activeTransfer = 'upload';
   showUploadModal();
@@ -454,7 +468,7 @@ async function startUploadSource() {
   controls.confirmUploadBtn.hidden = true;
   controls.userSelectLabel.hidden = true;
   controls.uploadSaveSelectLabel.hidden = true;
-  status(`Step 1/3: building metadata for ${entryIds.length} entries.`);
+  status(`Step 1/3: building metadata for ${externalSelected ? 1 : entryIds.length} entries.`);
   try {
     await window.saveTransfer.upload(current);
   } catch (error) {
@@ -465,6 +479,9 @@ async function startUploadSource() {
 }
 
 function showUploadConfirmation() {
+  externalUploadImage = null;
+  controls.externalTitleId.value = '';
+  controls.externalUploadControls.hidden = !availableUsers.length;
   controls.userSelect.replaceChildren();
   for (const user of availableUsers) {
     const option = document.createElement('option');
@@ -481,7 +498,7 @@ function showUploadConfirmation() {
     option.textContent = `${entry.name || entry.title} (${entry.title}) — ${entry.owner} — entry ${entry.id}`;
     controls.uploadSaveSelect.appendChild(option);
   }
-  if (!availableUsers.length || !downloadedEntries.length) {
+  if (!availableUsers.length) {
     controls.userSelectLabel.hidden = true;
     controls.uploadSaveSelectLabel.hidden = true;
     controls.confirmUploadBtn.hidden = true;
@@ -491,7 +508,7 @@ function showUploadConfirmation() {
   controls.userSelectLabel.hidden = false;
   controls.uploadSaveSelectLabel.hidden = false;
   controls.confirmUploadBtn.hidden = false;
-  status('Select one user and one or more entries.');
+  status('Select downloaded entries, or add an external encrypted save.');
 }
 
 async function startUpload() {
@@ -844,3 +861,23 @@ window.saveTransfer.onEvent((event) => {
     controls.powerBtn.hidden = true;
   }
 });
+
+async function addExternalUpload(folder = false) {
+  const image = folder ? await window.saveTransfer.chooseExternalFolder() : await window.saveTransfer.chooseExternalSave();
+  if (!image) return;
+  externalUploadImage = image;
+  let option = [...controls.uploadSaveSelect.options].find((item) => item.value === 'external');
+  if (!option) {
+    option = document.createElement('option');
+    option.value = 'external';
+    controls.uploadSaveSelect.appendChild(option);
+  }
+  for (const item of controls.uploadSaveSelect.options) item.selected = false;
+  option.textContent = `External: ${image.split(/[\\/]/).pop()}`;
+  option.selected = true;
+  const title = image.toUpperCase().match(/PPSA[0-9]{5}/);
+  controls.externalTitleId.value = title ? title[0] : '';
+  status('External save added. Check the PPSA title ID and destination user, then click Upload.');
+}
+controls.addExternalSaveBtn.addEventListener('click', () => addExternalUpload(false));
+controls.addExternalFolderBtn.addEventListener('click', () => addExternalUpload(true));
