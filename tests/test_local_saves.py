@@ -90,10 +90,21 @@ class LocalSaveTests(unittest.TestCase):
             result = local_profiles(root / "console-a")
             self.assertEqual(result["profiles"], [{
                 "id": assets.name,
+                "name": "",
                 "path": str(assets),
                 "users": ["18c60ea2"],
                 "save_count": 1,
             }])
+
+    def test_local_profiles_use_saved_console_name(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            assets, entry_id = self.make_case(root / "console-a")
+            (root / "console-a" / "console-names.json").write_text(json.dumps({
+                assets.name: {"name": "fert", "firmware": "13.60"},
+            }))
+            profile = local_profiles(root / "console-a")["profiles"][0]
+            self.assertEqual(profile["name"], "fert")
 
     def test_empty_inventory_is_not_an_error(self):
         with tempfile.TemporaryDirectory() as folder:

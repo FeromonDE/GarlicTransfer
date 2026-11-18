@@ -55,6 +55,10 @@ def local_inventory(assets, include_warnings=False):
 
 def local_profiles(root):
     root = Path(root).expanduser()
+    try:
+        names = json.loads((root / "console-names.json").read_text())
+    except (OSError, ValueError, TypeError):
+        names = {}
     candidates = [root] + [path for path in root.iterdir() if path.is_dir()] if root.is_dir() else []
     profiles = []
     for assets in candidates:
@@ -66,6 +70,7 @@ def local_profiles(root):
             continue
         profiles.append({
             "id": assets.name,
+            "name": names.get(assets.name, {}).get("name", ""),
             "path": str(assets),
             "users": sorted({entry["owner"] for entry in entries if entry["owner"]}),
             "save_count": sum(len(entry["files"]) for entry in entries),

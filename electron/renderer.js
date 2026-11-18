@@ -41,6 +41,7 @@ function options() {
     interface: controls.interface.value.trim(),
     hardware: Number(controls.hardware.value || 0),
     output: controls.output.value.trim() || 'dt_downloads',
+    profileRoot: profileRoot || controls.output.value.trim() || 'dt_downloads',
     metadata: controls.metadata.value.trim(),
     assets: controls.assets.value.trim() || controls.output.value.trim() || 'dt_downloads',
     userId: controls.userSelect.value,

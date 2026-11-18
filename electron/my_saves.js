@@ -216,7 +216,7 @@ async function loadLocalProfiles() {
   for (const profile of localProfiles) {
     const option = document.createElement('option');
     option.value = profile.id;
-    option.textContent = `${profile.id} (${profile.save_count} saves)`;
+    option.textContent = `${profile.name ? `${profile.name} — ` : ''}${profile.id} (${profile.save_count} saves)`;
     myControls.localConsoleSelect.appendChild(option);
   }
   if (selected) {

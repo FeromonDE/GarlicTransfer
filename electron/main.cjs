@@ -8,6 +8,7 @@ const { loadSettings, saveSettings } = require('./config.cjs');
 const { titleName } = require('./titles.cjs');
 const { pairingPrefixPath, existingPairingPrefix } = require('./pairing_store.cjs');
 const { registerSaveEditor } = require('./save_editor.cjs');
+const { recordConsoleNames } = require('./console_names.cjs');
 const { resourceRoot, oracleElf, workDir, pythonBin } = require('./paths.cjs');
 let window;
 let active = null;
@@ -253,7 +254,9 @@ function getConsoles(options) {
     child.on('close', (code) => {
       if (code !== 0) return reject(new Error(buffer.trim() || 'console discovery failed'));
       try {
-        resolve(JSON.parse(buffer).consoles || []);
+        const consoles = JSON.parse(buffer).consoles || [];
+        recordConsoleNames(options.profileRoot || options.output, consoles);
+        resolve(consoles);
       } catch (error) {
         reject(error);
       }
