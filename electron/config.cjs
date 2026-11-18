@@ -10,6 +10,7 @@ const fields = [
   'useRemoteOracle', 'serverUrl', 'workerKey', 'oracleHost', 'oraclePort',
   'interface', 'hardware', 'output', 'metadata', 'assets',
   'userId', 'titleId', 'entryId', 'userName', 'sourcePort', 'dataPort', 'discoveryPort', 'preferIpv6',
+  'uploadDisplayName',
 ];
 const defaults = {
   useRemoteOracle: true,
@@ -30,6 +31,7 @@ const defaults = {
   dataPort: 1005,
   discoveryPort: 1006,
   preferIpv6: false,
+  uploadDisplayName: 'GarlicTransfer',
 };
 
 function parse(text) {

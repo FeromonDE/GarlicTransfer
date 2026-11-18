@@ -100,8 +100,19 @@ def interactive_console():
             print("[dt] commands: status, metadata, klog, power, submit <hex>, respond <cmd> <result> [body] [version], quit")
 
 
+def configured_host_name():
+    value = os.environ.get("DT_HOST_NAME", "GarlicTransfer").strip()
+    try:
+        encoded = value.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ValueError("upload display name must contain only printable ASCII characters") from exc
+    if not 1 <= len(encoded) <= 32 or any(byte < 0x20 or byte == 0x7F for byte in encoded):
+        raise ValueError("upload display name must be 1-32 printable ASCII characters")
+    return encoded
+
+
 HOST_ID = b"020000000001"
-HOST_NAME = b"GarlicTransfer"
+HOST_NAME = configured_host_name()
 SYSTEM_VERSION = os.environ.get("DT_SYSTEM_VERSION", "14200007").encode()
 METADATA_PATH = os.environ.get("DT_METADATA", "poc/dt-crypto/metadata-125-only137.db")
 # The address we tell the console to fetch save data from.  This must be THIS
@@ -228,10 +239,11 @@ def send_save_chunks(sock, key, nonce, sequence, file_type, file_id):
     manifest_path = Path(os.environ.get("DT_MANIFEST", str(root / "manifest.json")))
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     save = manifest.get(str(file_id), {})
+    source_id = int(save.get("source_id", file_id))
     entries = save.get("files", []) if file_type in (2, 3) else []
     assets = []
     for entry in entries:
-        candidates = (root / str(file_id) / entry["file"], root / entry["file"])
+        candidates = (root / str(source_id) / entry["file"], root / entry["file"])
         path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
         assets.append((entry, path))
     if assets and all(path.is_file() for _, path in assets):
@@ -402,7 +414,11 @@ def serve_data(client, oracle_host, oracle_port):
     sequence = 1
     send_sequence = 0
     while True:
-        header = recv_record(client, recv_key, recv_nonce, sequence)
+        try:
+            header = recv_record(client, recv_key, recv_nonce, sequence)
+        except EOFError as exc:
+            print(f"[data] session ended: {exc}", flush=True)
+            break
         sequence += 1
         cmd, sub, version, flags, size = struct.unpack("<BBHIQ", header)
         print(f"[data] cmd={cmd:#x} sub={sub} version={version:#x} body={size}", flush=True)
@@ -413,7 +429,6 @@ def serve_data(client, oracle_host, oracle_port):
             remaining = size
             while remaining:
                 chunk = recv_record(client, recv_key, recv_nonce, sequence)
-                sequence += 1
                 send_record(client, send_key, send_nonce, send_sequence, chunk)
                 send_sequence += 1
                 remaining -= len(chunk)
