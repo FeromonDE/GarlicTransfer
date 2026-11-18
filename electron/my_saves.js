@@ -9,7 +9,8 @@ for (const id of [
   'mySaveImportBtn', 'resignPanel', 'resignAccountId', 'confirmResignBtn', 'workspacePanel',
   'workspaceSummary', 'closeWorkspaceBtn', 'exportDecryptedBtn', 'addFilesBtn', 'encryptSaveBtn',
   'encryptPanel', 'encryptAccountId', 'confirmEncryptBtn', 'workspaceFiles', 'fileEditorPanel',
-  'editorFileName', 'editorMode', 'fileEditor', 'editorHint', 'saveFileBtn', 'downloadFileBtn',
+  'editorFileName', 'editorMode', 'fileEditor', 'editorHint', 'editorSearch', 'editorFindNext',
+  'editorOffset', 'editorGoOffset', 'editorRevert', 'editorByteCount', 'saveFileBtn', 'downloadFileBtn',
   'deleteFileBtn', 'mySavesStatus', 'mySavesLog',
 ]) myControls[id] = document.getElementById(id);
 myControls.mySavesTab = document.getElementById('libraryPage');
@@ -62,7 +63,8 @@ function myLog(message) {
 
 function setMyOperation(value) {
   mySaveOperation = value;
-  for (const button of document.querySelectorAll('#mySavesTab button')) button.disabled = value;
+  for (const button of document.querySelectorAll('#libraryPage button')) button.disabled = value;
+  for (const input of document.querySelectorAll('.editor-tools input')) input.disabled = value;
   myControls.fileEditor.disabled = value;
   myControls.editorMode.disabled = value;
   myControls.resignAccountId.disabled = value;
@@ -310,18 +312,95 @@ function bytesToHex(bytes) {
   const lines = [];
   for (let offset = 0; offset < bytes.length; offset += 16) {
     const chunk = [...bytes.slice(offset, offset + 16)];
-    lines.push(`${offset.toString(16).padStart(8, '0')}  ${chunk.map((byte) => byte.toString(16).padStart(2, '0')).join(' ')}`);
+    const hex = chunk.map((byte) => byte.toString(16).padStart(2, '0')).join(' ');
+    const utf8 = chunk.map((byte) => byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : '.').join('');
+    lines.push(`${offset.toString(16).padStart(8, '0')}  ${hex.padEnd(47, ' ')} |${utf8}|`);
   }
   return lines.join('\n');
 }
 
 function editorBytes() {
   if (myControls.editorMode.value === 'text') return new TextEncoder().encode(myControls.fileEditor.value);
-  const text = myControls.fileEditor.value.replace(/^[0-9a-f]{8}\s+/gm, '').replace(/\s+/g, '');
+  const text = myControls.fileEditor.value
+    .replace(/^[0-9a-f]{8}\s+/gm, '')
+    .replace(/\s*\|[^|]*\|\s*$/gm, '')
+    .replace(/\s+/g, '');
   if (text.length % 2 || /[^0-9a-f]/i.test(text)) throw new Error('Hex mode requires complete bytes written as two hexadecimal digits.');
   const bytes = new Uint8Array(text.length / 2);
   for (let index = 0; index < bytes.length; index++) bytes[index] = parseInt(text.slice(index * 2, index * 2 + 2), 16);
   return bytes;
+}
+
+function updateEditorByteCount() {
+  let count = selectedFileBytes?.length || 0;
+  if (selectedFileBytes) {
+    try { count = editorBytes().length; } catch {}
+  }
+  myControls.editorByteCount.textContent = `${count} byte${count === 1 ? '' : 's'}`;
+}
+
+function findSubsequence(haystack, needle, start) {
+  if (!needle.length) return -1;
+  for (let index = start; index <= haystack.length - needle.length; index++) {
+    if (needle.every((byte, offset) => haystack[index + offset] === byte)) return index;
+  }
+  return -1;
+}
+
+function selectEditorLine(line) {
+  const lines = myControls.fileEditor.value.split('\n');
+  const selected = Math.max(0, Math.min(line, lines.length - 1));
+  const start = lines.slice(0, selected).reduce((total, text) => total + text.length + 1, 0);
+  myControls.fileEditor.focus();
+  myControls.fileEditor.setSelectionRange(start, start + lines[selected].length);
+  myControls.fileEditor.scrollTop = Math.max(0, myControls.fileEditor.scrollHeight * (selected / lines.length) - 40);
+}
+
+function findInEditor() {
+  if (!selectedFileBytes) return;
+  const query = myControls.editorSearch.value;
+  if (!query) return;
+  if (myControls.editorMode.value === 'text') {
+    const haystack = myControls.fileEditor.value.toLowerCase();
+    const needle = query.toLowerCase();
+    let index = haystack.indexOf(needle, myControls.fileEditor.selectionEnd);
+    if (index < 0) index = haystack.indexOf(needle);
+    if (index < 0) {
+      myStatus(`Could not find ${query}.`);
+      return;
+    }
+    myControls.fileEditor.focus();
+    myControls.fileEditor.setSelectionRange(index, index + query.length);
+    return;
+  }
+  let needle;
+  const compact = query.replace(/\s+/g, '');
+  if (compact.length % 2 === 0 && /^[0-9a-f]+$/i.test(compact)) {
+    needle = new Uint8Array(compact.length / 2);
+    for (let index = 0; index < needle.length; index++) needle[index] = parseInt(compact.slice(index * 2, index * 2 + 2), 16);
+  } else {
+    needle = new TextEncoder().encode(query);
+  }
+  let index = findSubsequence(selectedFileBytes, needle, 0);
+  if (index < 0) index = findSubsequence(selectedFileBytes, needle, 0);
+  if (index < 0) {
+    myStatus(`Could not find ${query}.`);
+    return;
+  }
+  selectEditorLine(Math.floor(index / 16));
+  myStatus(`Found ${query} at 0x${index.toString(16)}.`);
+}
+
+function goToEditorOffset() {
+  if (!selectedFileBytes) return;
+  const value = myControls.editorOffset.value.trim();
+  if (!/^[0-9a-f]+$/i.test(value)) {
+    myStatus('Enter a hexadecimal offset, for example 1b8.');
+    return;
+  }
+  const offset = Math.min(parseInt(value, 16), Math.max(0, selectedFileBytes.length - 1));
+  selectEditorLine(Math.floor(offset / 16));
+  myStatus(`Moved to offset 0x${offset.toString(16)}.`);
 }
 
 function renderEditor() {
@@ -336,6 +415,10 @@ function renderEditor() {
     : new TextDecoder().decode(selectedFileBytes);
   editorDirty = false;
   myControls.saveFileBtn.textContent = 'Save changes';
+  myControls.editorHint.textContent = myControls.editorMode.value === 'hex'
+    ? 'Offsets and hex bytes are on the left; UTF-8 text is on the right. Search or jump to an offset.'
+    : 'Edit text directly. Switch to hex mode for byte-level editing.';
+  updateEditorByteCount();
   updateMyFileActions();
 }
 
@@ -592,9 +675,21 @@ myControls.editorMode.addEventListener('change', () => {
     myStatus(error.message);
   }
 });
+myControls.editorFindNext.addEventListener('click', findInEditor);
+myControls.editorSearch.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') findInEditor();
+});
+myControls.editorGoOffset.addEventListener('click', goToEditorOffset);
+myControls.editorOffset.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') goToEditorOffset();
+});
+myControls.editorRevert.addEventListener('click', () => runMyOperation(async () => {
+  if (selectedWorkspaceFile) await openWorkspaceFile(selectedWorkspaceFile);
+}));
 myControls.fileEditor.addEventListener('input', () => {
   editorDirty = true;
   myControls.saveFileBtn.textContent = 'Save changes *';
+  updateEditorByteCount();
 });
 async function saveCurrentEditorFile() {
   if (!selectedWorkspaceFile) return false;

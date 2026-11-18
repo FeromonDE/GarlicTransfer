@@ -288,6 +288,14 @@
                     <strong id="editorFileName"></strong>
                     <select id="editorMode" aria-label="Editor mode"><option value="text">Text</option><option value="hex">Hex</option></select>
                   </div>
+                  <div class="editor-tools">
+                    <input id="editorSearch" placeholder="Find text or hex bytes" aria-label="Find text or hex bytes">
+                    <button id="editorFindNext" type="button">Find</button>
+                    <input id="editorOffset" placeholder="Offset (hex)" aria-label="Offset in hexadecimal">
+                    <button id="editorGoOffset" type="button">Go</button>
+                    <button id="editorRevert" type="button">Revert</button>
+                    <span id="editorByteCount">0 bytes</span>
+                  </div>
                   <textarea id="fileEditor" spellcheck="false" aria-label="Save file editor"></textarea>
                   <p id="editorHint" class="hint">Select a file to edit. Metadata and sce_sys files are protected from deletion.</p>
                   <div class="editor-actions">

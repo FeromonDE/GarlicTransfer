@@ -496,6 +496,7 @@ app.whenReady().then(() => {
     minWidth: 1000,
     minHeight: 680,
     backgroundColor: '#11151b',
+    icon: path.join(__dirname, 'icon.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

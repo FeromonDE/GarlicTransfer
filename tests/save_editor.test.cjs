@@ -5,6 +5,7 @@ const fsPromises = require('node:fs/promises');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const {
   createRemoteJob,
@@ -192,7 +193,7 @@ test('My Saves tab exposes the complete local workflow', () => {
   for (const id of [
     'mySaveEntries', 'myTitleEntries', 'mySavesBackBtn', 'localConsoleSelect', 'localUserSelect', 'decryptExternalBtn', 'mySaveDecryptBtn', 'mySaveResignBtn',
     'mySaveExportBtn', 'mySaveImportBtn', 'exportDecryptedBtn', 'addFilesBtn',
-    'encryptSaveBtn', 'editorMode', 'saveFileBtn', 'saveEncryptFileBtn', 'saveMoreBtn', 'decryptExportBtn', 'deleteFileBtn',
+    'encryptSaveBtn', 'editorMode', 'editorSearch', 'editorOffset', 'editorRevert', 'saveFileBtn', 'saveEncryptFileBtn', 'saveMoreBtn', 'decryptExportBtn', 'deleteFileBtn',
     'uploadSaveBtn', 'uploadEncryptedBtn', 'workspaceMoreBtn', 'fileMoreBtn',
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
@@ -205,4 +206,23 @@ test('My Saves tab exposes the complete local workflow', () => {
   for (const method of ['chooseInput', 'localFile', 'localProfiles', 'backupLocal', 'encryptLocal', 'read', 'write', 'add', 'delete', 'downloadFile', 'downloadArchive', 'run']) {
     assert.match(preload, new RegExp(`${method}:`));
   }
+});
+
+test('hex editor includes UTF-8 text and parses it back losslessly', () => {
+  const source = fs.readFileSync(path.join(root, 'electron', 'my_saves.js'), 'utf8');
+  const start = source.indexOf('function bytesToHex');
+  const end = source.indexOf('function updateEditorByteCount');
+  const context = {
+    myControls: {
+      editorMode: { value: 'hex' },
+      fileEditor: { value: '' },
+    },
+    TextEncoder,
+  };
+  vm.runInNewContext(source.slice(start, end), context);
+  const original = new Uint8Array([0x41, 0x00, 0x42, 0x7e, 0x80]);
+  const formatted = context.bytesToHex(original);
+  assert.match(formatted, /\|A\.B~\.\|/);
+  context.myControls.fileEditor.value = formatted;
+  assert.deepEqual([...context.editorBytes()], [...original]);
 });
