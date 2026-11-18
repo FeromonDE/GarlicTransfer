@@ -11,6 +11,7 @@ for (const id of [
   'editorFileName', 'editorMode', 'fileEditor', 'editorHint', 'saveFileBtn', 'downloadFileBtn',
   'deleteFileBtn', 'mySavesStatus', 'mySavesLog',
 ]) myControls[id] = document.getElementById(id);
+myControls.mySavesTab = document.getElementById('libraryPage');
 
 let mySaves = [];
 let selectedTitle = null;
@@ -312,7 +313,7 @@ async function uploadCurrentSave() {
   if (!selectedLocalSave) return;
   pendingUploadEntryIds = [selectedLocalSave.entry.id];
   pendingUploadUserId = selectedLocalSave.entry.owner;
-  document.querySelector('[data-tab="transfer"]').click();
+  document.querySelector('[data-page="upload"]').click();
   await startUpload();
 }
 
@@ -533,10 +534,10 @@ myControls.deleteFileBtn.addEventListener('click', () => runMyOperation(async ()
   renderWorkspace();
 }));
 
-for (const tab of document.querySelectorAll('.tab')) {
+for (const tab of document.querySelectorAll('.nav-item')) {
   tab.addEventListener('click', () => {
-    myControls.mySavesTab.hidden = tab.dataset.tab !== 'mySaves';
-    if (tab.dataset.tab === 'mySaves') {
+    myControls.mySavesTab.hidden = tab.dataset.page !== 'library';
+    if (tab.dataset.page === 'library') {
       runMyOperation(async () => {
         const count = await refreshMySaves();
         myStatus(count ? 'Select a save to get started.' : 'Download a save with the Transfer tab, or decrypt another save.');

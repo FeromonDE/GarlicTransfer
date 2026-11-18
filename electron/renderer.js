@@ -65,6 +65,21 @@ function profilePath(root, child) {
   return `${root.replace(/[\\/]+$/, '')}${separator}${child}`;
 }
 
+function updateSidebarConsole() {
+  const selected = controls.consoleSelect.selectedOptions[0];
+  const connected = Boolean(selected?.value);
+  const badge = byId('sidebarConsole');
+  if (badge) {
+    badge.classList.toggle('connected', connected);
+    byId('sidebarConsoleName').textContent = connected
+      ? selected.textContent.split(' — ')[0].trim()
+      : 'Not connected';
+    byId('sidebarConsoleDetail').textContent = connected
+      ? selected.value
+      : 'Discover a PS5 to begin';
+  }
+}
+
 function applyConsoleProfile() {
   const root = profileRoot || 'dt_downloads';
   const selected = controls.consoleSelect.selectedOptions[0];
@@ -74,6 +89,7 @@ function applyConsoleProfile() {
   controls.assets.value = controls.output.value;
   controls.metadata.value = '';
   refreshPairingStatus();
+  updateSidebarConsole();
 }
 
 async function refreshPairingStatus() {
@@ -580,13 +596,21 @@ function updateOracleMode() {
 controls.useRemoteOracle.addEventListener('change', updateOracleMode);
 updateOracleMode();
 
-for (const tab of document.querySelectorAll('.tab')) {
-  tab.addEventListener('click', () => {
-    for (const other of document.querySelectorAll('.tab')) other.classList.toggle('active', other === tab);
-    byId('transferTab').hidden = tab.dataset.tab !== 'transfer';
-    byId('settingsTab').hidden = tab.dataset.tab !== 'settings';
-  });
+function showPage(name) {
+  for (const el of document.querySelectorAll('.page')) el.hidden = true;
+  const target = byId(`${name}Page`);
+  if (target) target.hidden = false;
+  for (const btn of document.querySelectorAll('.nav-item')) {
+    btn.classList.toggle('active', btn.dataset.page === name);
+  }
 }
+for (const btn of document.querySelectorAll('.nav-item')) {
+  btn.addEventListener('click', () => showPage(btn.dataset.page));
+}
+
+byId('logToggle').addEventListener('click', () => {
+  byId('logDock').classList.toggle('expanded');
+});
 
 controls.discoverBtn.addEventListener('click', async () => {
   controls.discoverBtn.disabled = true;

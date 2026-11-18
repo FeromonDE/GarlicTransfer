@@ -197,7 +197,7 @@ test('My Saves tab exposes the complete local workflow', () => {
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  assert.match(html, /data-tab="mySaves"/);
+  assert.match(html, /data-page="library"/);
   assert.match(renderer, /operation: 'decrypt'/);
   assert.match(renderer, /operation: 'encrypt'/);
   assert.match(renderer, /operation: 'resign'/);
