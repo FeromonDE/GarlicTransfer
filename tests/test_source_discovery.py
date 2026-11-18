@@ -68,6 +68,7 @@ class DiscoveryReplyTests(unittest.TestCase):
         self._saved_address = dt_source.DATA_ADDRESS
         self._saved_pinned = dt_source.ADDRESS_PINNED
         self._saved_version = dt_source.SYSTEM_VERSION
+        self._saved_host_name = dt_source.HOST_NAME
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("127.0.0.1", 0))
         self.port = self.sock.getsockname()[1]
@@ -80,6 +81,7 @@ class DiscoveryReplyTests(unittest.TestCase):
         dt_source.DATA_ADDRESS = self._saved_address
         dt_source.ADDRESS_PINNED = self._saved_pinned
         dt_source.SYSTEM_VERSION = self._saved_version
+        dt_source.HOST_NAME = self._saved_host_name
 
     def test_srch_reply_shape(self):
         reply = _udp_exchange(self.port, b"SRCH * HTTP/1.1\n"
@@ -95,6 +97,11 @@ class DiscoveryReplyTests(unittest.TestCase):
         # the discovery thread must have adopted the interface the peer came in on
         self.assertTrue(dt_source.DATA_ADDRESS.endswith(bytes((127, 0, 0, 1))),
                         dt_source.DATA_ADDRESS.hex())
+
+    def test_srch_uses_the_configured_display_name(self):
+        dt_source.HOST_NAME = b"Living Room PC"
+        reply = _udp_exchange(self.port, b"SRCH * HTTP/1.1\n")
+        self.assertIn(b"host-name:Living Room PC\n", reply)
 
     def test_launch4_advertises_our_own_address(self):
         _udp_exchange(self.port, b"SRCH * HTTP/1.1\n")
@@ -132,6 +139,26 @@ class DiscoveryReplyTests(unittest.TestCase):
             client.close()
         # and the server is still alive afterwards
         self.assertIn(b"200 Ok", _udp_exchange(self.port, b"SRCH * HTTP/1.1\n"))
+
+
+class DisplayNameConfigurationTests(unittest.TestCase):
+    def test_display_name_defaults_and_reads_the_environment(self):
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(dt_source.configured_host_name(), b"GarlicTransfer")
+        with patch.dict(os.environ, {"DT_HOST_NAME": "  Bedroom PS5  "}):
+            self.assertEqual(dt_source.configured_host_name(), b"Bedroom PS5")
+
+    def test_display_name_rejects_invalid_protocol_values(self):
+        import os
+        from unittest.mock import patch
+
+        for value in ("", "x" * 33, "bad\nname", "bad\rname", "caf\u00e9"):
+            with self.subTest(value=value), patch.dict(os.environ, {"DT_HOST_NAME": value}):
+                with self.assertRaises(ValueError):
+                    dt_source.configured_host_name()
 
 
 class OracleConfigurationTests(unittest.TestCase):

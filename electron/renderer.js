@@ -4,16 +4,21 @@ for (const id of [
   'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
-  'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort',
+  'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
   'consoleSelect', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
-  'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn', 'externalSavePath', 'externalTitleId', 'uploadExternalBtn', 'chooseExternalSaveBtn',
+  'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
+  'browseLocalBtn', 'localBrowser', 'localEntries', 'importModal', 'importWarning', 'confirmImportBtn', 'cancelImportBtn',
 ]) controls[id] = byId(id);
 let activeTransfer = null;
+let pendingImport = null;
+let externalUploadImage = null;
 let availableUsers = [];
 let availableEntries = [];
 let requestedDownloadIds = [];
 let pendingUploadOptions = null;
+let pendingUploadEntryIds = null;
+let pendingUploadUserId = null;
 let browserHost = null;
 let pendingBrowserHost = null;
 let dataTransferArmedHost = null;
@@ -36,14 +41,15 @@ function options() {
     interface: controls.interface.value.trim(),
     hardware: Number(controls.hardware.value || 0),
     output: controls.output.value.trim() || 'dt_downloads',
+    profileRoot: profileRoot || controls.output.value.trim() || 'dt_downloads',
     metadata: controls.metadata.value.trim(),
     assets: controls.assets.value.trim() || controls.output.value.trim() || 'dt_downloads',
-    titleId: controls.externalTitleId.value.trim().toUpperCase(),
     userId: controls.userSelect.value,
     userName: controls.userSelect.selectedOptions[0]?.dataset.name || 'user',
     sourcePort: Number(controls.sourcePort.value || 1004),
     dataPort: Number(controls.dataPort.value || 1005),
     discoveryPort: Number(controls.discoveryPort.value || 1006),
+    uploadDisplayName: controls.uploadDisplayName.value.trim() || 'GarlicTransfer',
     preferIpv6: controls.preferIpv6.checked,
     skipLaunch: dataTransferArmedHost === clientHost && !controls.preferIpv6.checked,
     skipPower: dataTransferArmedHost === clientHost && !controls.preferIpv6.checked,
@@ -60,6 +66,21 @@ function profilePath(root, child) {
   return `${root.replace(/[\\/]+$/, '')}${separator}${child}`;
 }
 
+function updateSidebarConsole() {
+  const selected = controls.consoleSelect.selectedOptions[0];
+  const connected = Boolean(selected?.value);
+  const badge = byId('sidebarConsole');
+  if (badge) {
+    badge.classList.toggle('connected', connected);
+    byId('sidebarConsoleName').textContent = connected
+      ? selected.textContent.split(' — ')[0].trim()
+      : 'Not connected';
+    byId('sidebarConsoleDetail').textContent = connected
+      ? selected.value
+      : 'Discover a PS5 to begin';
+  }
+}
+
 function applyConsoleProfile() {
   const root = profileRoot || 'dt_downloads';
   const selected = controls.consoleSelect.selectedOptions[0];
@@ -69,6 +90,7 @@ function applyConsoleProfile() {
   controls.assets.value = controls.output.value;
   controls.metadata.value = '';
   refreshPairingStatus();
+  updateSidebarConsole();
 }
 
 async function refreshPairingStatus() {
@@ -110,6 +132,11 @@ function updateSelection() {
 function busy(value) {
   controls.downloadBtn.disabled = value;
   controls.uploadBtn.disabled = value;
+  controls.addExternalSaveBtn.disabled = value;
+  controls.addExternalFolderBtn.disabled = value;
+  controls.externalTitleId.disabled = value;
+  controls.browseLocalBtn.disabled = value;
+  for (const button of document.querySelectorAll('.local-action')) button.disabled = value;
   controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || value || browseSessionActive;
   controls.cancelBtn.disabled = !value;
   controls.consoleSelect.disabled = value || browseSessionActive;
@@ -153,6 +180,143 @@ function showUploadModal() {
 function hideUploadModal() {
   if (controls.uploadModal.open) controls.uploadModal.close();
 }
+
+function resetUploadUI() {
+  pendingUploadOptions = null;
+  externalUploadImage = null;
+  controls.externalUploadControls.hidden = true;
+  dataTransferArmedHost = null;
+  hideUploadModal();
+  controls.confirmUploadBtn.hidden = true;
+  controls.userSelectLabel.hidden = true;
+  controls.uploadSaveSelectLabel.hidden = true;
+}
+
+function hideImportModal() {
+  if (controls.importModal.open) controls.importModal.close();
+  pendingImport = null;
+}
+
+function localEntryTitle(entry) {
+  return entry.name || availableEntries.find((candidate) => candidate.id === entry.id)?.name || entry.title;
+}
+
+function renderLocalEntries(entries) {
+  controls.localEntries.replaceChildren();
+  if (!entries.length) {
+    controls.localEntries.innerHTML = '<tr><td colspan="5" class="empty">No downloaded saves were found.</td></tr>';
+    return;
+  }
+  for (const entry of entries) {
+    for (const file of entry.files) {
+      const row = document.createElement('tr');
+      const title = document.createElement('td');
+      title.textContent = `${localEntryTitle(entry)} · entry ${entry.id}`;
+      const owner = document.createElement('td');
+      owner.textContent = entry.owner;
+      const name = document.createElement('td');
+      name.textContent = file.file;
+      const size = document.createElement('td');
+      size.textContent = (file.size / 0x100000).toFixed(1);
+      const actions = document.createElement('td');
+      const exportButton = document.createElement('button');
+      exportButton.type = 'button';
+      exportButton.className = 'local-action';
+      exportButton.textContent = 'Export';
+      exportButton.addEventListener('click', () => exportLocalSave(entry, file));
+      const importButton = document.createElement('button');
+      importButton.type = 'button';
+      importButton.className = 'local-action';
+      importButton.textContent = 'Import';
+      importButton.addEventListener('click', () => chooseImportReplacement(entry, file));
+      actions.append(exportButton, importButton);
+      row.append(title, owner, name, size, actions);
+      controls.localEntries.appendChild(row);
+    }
+  }
+}
+
+async function refreshLocalSaves() {
+  const result = await window.saveTransfer.localSaves(options().assets);
+  controls.localBrowser.hidden = false;
+  renderLocalEntries(result.entries || []);
+  return {
+    count: (result.entries || []).reduce((count, entry) => count + entry.files.length, 0),
+    warnings: result.warnings || [],
+  };
+}
+
+async function browseLocalSaves() {
+  if (!options().clientHost) {
+    status('Discover your console first.');
+    return;
+  }
+  if (activeTransfer || browseSessionActive) {
+    status('Stop the active transfer before changing local saves.');
+    return;
+  }
+  activeTransfer = 'local';
+  busy(true);
+  try {
+    const { count, warnings } = await refreshLocalSaves();
+    const warning = warnings.length ? ` Skipped ${warnings.length} invalid manifest(s): ${warnings.join('; ')}` : '';
+    status(`Found ${count} downloaded file(s). Export a copy or import a replacement.${warning}`);
+  } catch (error) {
+    status(`Could not browse local saves: ${error.message}`);
+  } finally {
+    activeTransfer = null;
+    busy(false);
+  }
+}
+
+async function exportLocalSave(entry, file) {
+  if (activeTransfer || browseSessionActive) return;
+  activeTransfer = 'local';
+  busy(true);
+  try {
+    const result = await window.saveTransfer.exportLocalSave({
+      assets: options().assets,
+      entryId: entry.id,
+      filename: file.file,
+    });
+    if (result) status(`Exported ${file.file} to ${result.destination}`);
+  } catch (error) {
+    status(`Could not export ${file.file}: ${error.message}`);
+  } finally {
+    activeTransfer = null;
+    busy(false);
+  }
+}
+
+async function chooseImportReplacement(entry, file) {
+  if (activeTransfer || browseSessionActive) return;
+  const source = await window.saveTransfer.chooseExternalSave();
+  if (!source) return;
+  pendingImport = { assets: options().assets, entryId: entry.id, filename: file.file, source };
+  controls.importWarning.textContent = `This will replace ${file.file}. Make sure you have backed it up. Are you sure you want to do this?`;
+  if (!controls.importModal.open) controls.importModal.showModal();
+}
+
+controls.confirmImportBtn.addEventListener('click', async () => {
+  if (!pendingImport) return;
+  const replacement = pendingImport;
+  pendingImport = null;
+  if (controls.importModal.open) controls.importModal.close();
+  activeTransfer = 'local';
+  busy(true);
+  try {
+    await window.saveTransfer.importLocalSave(replacement);
+    await refreshLocalSaves();
+    status(`Replaced ${replacement.filename} and refreshed its upload metadata.`);
+    document.dispatchEvent(new CustomEvent('local-save-replaced', { detail: replacement }));
+  } catch (error) {
+    status(`Could not replace ${replacement.filename}: ${error.message}`);
+  } finally {
+    activeTransfer = null;
+    busy(false);
+  }
+});
+controls.cancelImportBtn.addEventListener('click', hideImportModal);
 
 function renderEntryTable(container, entries, emptyText) {
   container.replaceChildren();
@@ -290,8 +454,14 @@ async function startDownload(entryIds) {
 
 async function startUploadSource() {
   const selectedUser = controls.userSelect.selectedOptions[0];
-  const entryIds = [...controls.uploadSaveSelect.selectedOptions].map((option) => Number(option.value));
-  if (!selectedUser || !entryIds.length) {
+  const externalSelected = [...controls.uploadSaveSelect.selectedOptions].some((option) => option.value === 'external');
+  const entryIds = [...controls.uploadSaveSelect.selectedOptions].filter((option) => option.value !== 'external').map((option) => Number(option.value));
+  const titleId = controls.externalTitleId.value.trim().toUpperCase();
+  if (externalSelected && (entryIds.length || !externalUploadImage || !/^PPSA[0-9]{5}$/.test(titleId))) {
+    status('Select the external save by itself and enter its PPSA title ID (for example PPSA12345).');
+    return;
+  }
+  if (!selectedUser || (!entryIds.length && !externalSelected)) {
     status('Select one user and at least one downloaded entry before continuing.');
     return;
   }
@@ -299,7 +469,7 @@ async function startUploadSource() {
     const entry = availableEntries.find((candidate) => candidate.id === id);
     return entry?.kind === 'save' ? 'save' : 'other';
   }));
-  if (uploadKinds.size !== 1) {
+  if (!externalSelected && uploadKinds.size !== 1) {
     status('Upload saves and other content in separate batches.');
     return;
   }
@@ -308,7 +478,9 @@ async function startUploadSource() {
     userId: selectedUser.value,
     userName: selectedUser.dataset.name || 'user',
     entryIds,
-    uploadKind: uploadKinds.values().next().value,
+    uploadKind: externalSelected ? 'external' : uploadKinds.values().next().value,
+    externalImage: externalSelected ? externalUploadImage : undefined,
+    titleId: externalSelected ? titleId : undefined,
   };
   activeTransfer = 'upload';
   showUploadModal();
@@ -316,7 +488,7 @@ async function startUploadSource() {
   controls.confirmUploadBtn.hidden = true;
   controls.userSelectLabel.hidden = true;
   controls.uploadSaveSelectLabel.hidden = true;
-  status(`Step 1/3: building metadata for ${entryIds.length} entries.`);
+  status(`Step 1/3: building metadata for ${externalSelected ? 1 : entryIds.length} entries.`);
   try {
     await window.saveTransfer.upload(current);
   } catch (error) {
@@ -327,6 +499,9 @@ async function startUploadSource() {
 }
 
 function showUploadConfirmation() {
+  externalUploadImage = null;
+  controls.externalTitleId.value = '';
+  controls.externalUploadControls.hidden = !availableUsers.length;
   controls.userSelect.replaceChildren();
   for (const user of availableUsers) {
     const option = document.createElement('option');
@@ -334,6 +509,12 @@ function showUploadConfirmation() {
     option.dataset.name = user.name;
     option.textContent = `${user.name} (${user.id})`;
     controls.userSelect.appendChild(option);
+  }
+  if (pendingUploadUserId) {
+    const owner = pendingUploadUserId.toLowerCase();
+    const matchingUser = availableUsers.find((user) => String(user.id).toLowerCase() === owner);
+    if (matchingUser) controls.userSelect.value = matchingUser.id;
+    pendingUploadUserId = null;
   }
   controls.uploadSaveSelect.replaceChildren();
   const downloadedEntries = availableEntries.filter((entry) => entry.downloaded);
@@ -343,7 +524,13 @@ function showUploadConfirmation() {
     option.textContent = `${entry.name || entry.title} (${entry.title}) — ${entry.owner} — entry ${entry.id}`;
     controls.uploadSaveSelect.appendChild(option);
   }
-  if (!availableUsers.length || !downloadedEntries.length) {
+  if (pendingUploadEntryIds) {
+    for (const option of controls.uploadSaveSelect.options) {
+      option.selected = pendingUploadEntryIds.includes(Number(option.value));
+    }
+    pendingUploadEntryIds = null;
+  }
+  if (!availableUsers.length) {
     controls.userSelectLabel.hidden = true;
     controls.uploadSaveSelectLabel.hidden = true;
     controls.confirmUploadBtn.hidden = true;
@@ -353,7 +540,7 @@ function showUploadConfirmation() {
   controls.userSelectLabel.hidden = false;
   controls.uploadSaveSelectLabel.hidden = false;
   controls.confirmUploadBtn.hidden = false;
-  status('Select one user and one or more entries.');
+  status('Select downloaded entries, or add an external encrypted save.');
 }
 
 async function startUpload() {
@@ -410,13 +597,21 @@ function updateOracleMode() {
 controls.useRemoteOracle.addEventListener('change', updateOracleMode);
 updateOracleMode();
 
-for (const tab of document.querySelectorAll('.tab')) {
-  tab.addEventListener('click', () => {
-    for (const other of document.querySelectorAll('.tab')) other.classList.toggle('active', other === tab);
-    byId('transferTab').hidden = tab.dataset.tab !== 'transfer';
-    byId('settingsTab').hidden = tab.dataset.tab !== 'settings';
-  });
+function showPage(name) {
+  for (const el of document.querySelectorAll('.page')) el.hidden = true;
+  const target = byId(`${name}Page`);
+  if (target) target.hidden = false;
+  for (const btn of document.querySelectorAll('.nav-item')) {
+    btn.classList.toggle('active', btn.dataset.page === name);
+  }
 }
+for (const btn of document.querySelectorAll('.nav-item')) {
+  btn.addEventListener('click', () => showPage(btn.dataset.page));
+}
+
+byId('logToggle').addEventListener('click', () => {
+  byId('logDock').classList.toggle('expanded');
+});
 
 controls.discoverBtn.addEventListener('click', async () => {
   controls.discoverBtn.disabled = true;
@@ -559,41 +754,8 @@ controls.selectAllEntries.addEventListener('change', () => {
   renderEntries();
 });
 controls.uploadBtn.addEventListener('click', startUpload);
+controls.browseLocalBtn.addEventListener('click', browseLocalSaves);
 controls.confirmUploadBtn.addEventListener('click', startUploadSource);
-controls.chooseExternalSaveBtn.addEventListener('click', async () => {
-  const selected = await window.saveTransfer.chooseExternalSave();
-  if (selected) controls.externalSavePath.value = selected;
-});
-controls.uploadExternalBtn.addEventListener('click', async () => {
-  if (activeTransfer || browseSessionActive) return;
-  const selectedUser = controls.userSelect.selectedOptions[0];
-  const externalImage = controls.externalSavePath.value.trim();
-  const titleId = controls.externalTitleId.value.trim().toUpperCase();
-  if (!selectedUser || !externalImage || !/^[A-Z0-9]{9}$/.test(titleId)) {
-    status('Select a target user, an encrypted save image, and a nine-character title ID.');
-    return;
-  }
-  const current = {
-    ...(pendingUploadOptions || options()),
-    userId: selectedUser.value,
-    userName: selectedUser.dataset.name || 'user',
-    titleId,
-    externalImage,
-    entryIds: [],
-    uploadKind: 'external',
-  };
-  activeTransfer = 'upload';
-  showUploadModal();
-  busy(true);
-  status('Step 1/3: building metadata for the external save.');
-  try {
-    await window.saveTransfer.upload(current);
-  } catch (error) {
-    status(`Could not start external save upload: ${error.message}`);
-    activeTransfer = null;
-    busy(false);
-  }
-});
 controls.finishBtn.addEventListener('click', async () => {
   if (!browseSessionActive || activeTransfer) return;
   if (!window.confirm('Close Data Transfer and reboot the console now?')) return;
@@ -717,6 +879,7 @@ window.saveTransfer.onEvent((event) => {
     if (mode === 'finish') dataTransferArmedHost = null;
     activeTransfer = null;
     availableUsers = event.users || availableUsers;
+    if (mode === 'upload') resetUploadUI();
     if (mode === 'download') {
       dataTransferArmedHost = browserHost;
       for (const id of event.entryIds || requestedDownloadIds) downloadedEntryIds.add(id);
@@ -738,3 +901,23 @@ window.saveTransfer.onEvent((event) => {
     controls.powerBtn.hidden = true;
   }
 });
+
+async function addExternalUpload(folder = false) {
+  const image = folder ? await window.saveTransfer.chooseExternalFolder() : await window.saveTransfer.chooseExternalSave();
+  if (!image) return;
+  externalUploadImage = image;
+  let option = [...controls.uploadSaveSelect.options].find((item) => item.value === 'external');
+  if (!option) {
+    option = document.createElement('option');
+    option.value = 'external';
+    controls.uploadSaveSelect.appendChild(option);
+  }
+  for (const item of controls.uploadSaveSelect.options) item.selected = false;
+  option.textContent = `External: ${image.split(/[\\/]/).pop()}`;
+  option.selected = true;
+  const title = image.toUpperCase().match(/PPSA[0-9]{5}/);
+  controls.externalTitleId.value = title ? title[0] : '';
+  status('External save added. Check the PPSA title ID and destination user, then click Upload.');
+}
+controls.addExternalSaveBtn.addEventListener('click', () => addExternalUpload(false));
+controls.addExternalFolderBtn.addEventListener('click', () => addExternalUpload(true));

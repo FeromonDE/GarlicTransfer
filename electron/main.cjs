@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const net = require('node:net');
@@ -7,6 +7,8 @@ const { startRemoteOracle, stopRemoteOracle } = require('./remote_oracle.cjs');
 const { loadSettings, saveSettings } = require('./config.cjs');
 const { titleName } = require('./titles.cjs');
 const { pairingPrefixPath, existingPairingPrefix } = require('./pairing_store.cjs');
+const { registerSaveEditor } = require('./save_editor.cjs');
+const { recordConsoleNames } = require('./console_names.cjs');
 const { resourceRoot, oracleElf, workDir, pythonBin } = require('./paths.cjs');
 let window;
 let active = null;
@@ -253,7 +255,9 @@ function getConsoles(options) {
     child.on('close', (code) => {
       if (code !== 0) return reject(new Error(buffer.trim() || 'console discovery failed'));
       try {
-        resolve(JSON.parse(buffer).consoles || []);
+        const consoles = JSON.parse(buffer).consoles || [];
+        recordConsoleNames(options.profileRoot || options.output, consoles);
+        resolve(consoles);
       } catch (error) {
         reject(error);
       }
@@ -302,12 +306,37 @@ function getInventory(metadataPath) {
   });
 }
 
+function runLocalSaveOperation(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(pythonBin(), ['-m', 'poc.dt_local_saves', command, ...args], {
+      cwd: workDir,
+      env: { ...process.env, PYTHONPATH: resourceRoot },
+    });
+    let output = '';
+    child.stdout.on('data', (data) => { output += data; });
+    child.stderr.on('data', (data) => { output += data; });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) return reject(new Error(output.trim() || `local save ${command} failed`));
+      try {
+        const result = JSON.parse(output.trim().split('\n').pop());
+        if (command === 'list' && Array.isArray(result.entries)) {
+          result.entries = result.entries.map((entry) => ({ ...entry, name: titleName(entry.title) }));
+        }
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
 function createMetadata(options) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(options.output, { recursive: true });
     const generatedMetadata = path.join(options.output, 'generated-metadata.db');
     const generatedManifest = path.join(options.output, 'generated-upload-manifest.json');
-    if (options.uploadKind === 'external') options.assets = path.join(options.output, 'external-save');
+    if (options.uploadKind === 'external') options.assets = path.join(options.output, `external-save-${Date.now()}`);
     const args = [
       '-m', 'poc.dt_metadata',
       '--output', generatedMetadata,
@@ -362,6 +391,7 @@ function startUpload(options) {
       DT_PORT: String(options.sourcePort || 1004),
       DT_DATA_PORT: String(options.dataPort || 1005),
       DT_DISCOVERY_PORT: String(options.discoveryPort || 1006),
+      DT_HOST_NAME: String(options.uploadDisplayName || 'GarlicTransfer'),
       // ensureOracle() has already resolved these: for the volunteer oracle it
       // points at the local relay it just started, otherwise at the configured
       // console.  dt_source used to fall back to its own 192.168.0.125:9022
@@ -414,9 +444,23 @@ function startUpload(options) {
           active.transferFinished = true;
           send('status', { step: 3, message: 'Save data sent. Waiting for the console to disconnect.' });
         }
-        if (active.transferFinished && line.toLowerCase().includes('cmd=0x94')) {
+        if (line.toLowerCase().includes('response complete cmd=0xb0')) {
+          active.rebootRequested = true;
+          send('status', { step: 3, message: 'Reboot requested. Waiting for the console to reconnect for reboot authentication.' });
+        }
+        if (active.rebootRequested && line.toLowerCase().includes('response complete cmd=0x93')) {
+          active.rebootAuthenticated = true;
+          send('status', { step: 3, message: 'Reboot authentication acknowledged. Finishing the transfer.' });
+        }
+        if (active.transferFinished && !active.rebootRequested && line.toLowerCase().includes('response complete cmd=0x94')) {
           active.completed = true;
           send('done', { message: 'Save upload completed. The client may reboot to finish.' });
+          stopActive();
+          return;
+        }
+        if (active.rebootAuthenticated && line.includes('[cmd] session ended:')) {
+          active.completed = true;
+          send('done', { message: 'Save upload and reboot authentication completed.' });
           stopActive();
           return;
         }
@@ -485,10 +529,15 @@ ipcMain.handle('dialog:assets', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+ipcMain.handle('dialog:external-folder', async () => {
+  const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
+  return result.canceled ? null : result.filePaths[0];
+});
+
 ipcMain.handle('dialog:external-save', async () => {
   const result = await dialog.showOpenDialog(window, {
     properties: ['openFile'],
-    filters: [{ name: 'PS5 save containers', extensions: ['bin', 'img', 'save'] }, { name: 'All files', extensions: ['*'] }],
+    filters: [{ name: 'All files', extensions: ['*'] }, { name: 'PS5 save containers', extensions: ['bin', 'img', 'save'] }],
   });
   return result.canceled ? null : result.filePaths[0];
 });
@@ -517,6 +566,18 @@ ipcMain.handle('transfer:finish', () => {
 ipcMain.handle('transfer:upload', (_event, options) => startUpload(options));
 ipcMain.handle('transfer:users', (_event, metadataPath) => getUsers(metadataPath));
 ipcMain.handle('transfer:inventory', (_event, metadataPath) => getInventory(metadataPath));
+ipcMain.handle('local:inventory', (_event, assets) => runLocalSaveOperation('list', [assets]));
+ipcMain.handle('local:profiles', (_event, assets) => runLocalSaveOperation('profiles', [assets]));
+ipcMain.handle('local:export', async (_event, { assets, entryId, filename }) => {
+  if (active) throw new Error('stop the active transfer before exporting a local save');
+  const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] });
+  if (result.canceled) return null;
+  return runLocalSaveOperation('export', [assets, String(entryId), filename, result.filePaths[0]]);
+});
+ipcMain.handle('local:import', (_event, { assets, entryId, filename, source }) => {
+  if (active) throw new Error('stop the active transfer before replacing a local save');
+  return runLocalSaveOperation('import', [assets, String(entryId), filename, source]);
+});
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('windows:firewall-helper', () => {
   if (process.platform !== 'win32') throw new Error('the firewall helper is only available on Windows');
@@ -544,3 +605,13 @@ ipcMain.handle('transfer:power', () => {
 ipcMain.handle('transfer:cancel', stopActive);
 ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:set', (_event, settings) => saveSettings(settings));
+
+registerSaveEditor({
+  ipcMain,
+  app,
+  dialog,
+  shell,
+  python: pythonBin(),
+  resourceRoot,
+  workDir,
+});

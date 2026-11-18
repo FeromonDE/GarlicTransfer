@@ -10,6 +10,7 @@ from contextlib import closing
 from pathlib import Path
 
 from poc.dt_download import DtChannel, discovery_versions, download_entry, download_metadata, launch_console
+from poc.dt_metadata import optional_save_identity
 from poc.dt_ppr_power import CAPTURED_BODY
 
 # The legacy captured identity carries its own console's account hash and host ID,
@@ -146,7 +147,9 @@ def index_downloaded_manifests(output):
                        for item in files):
                 continue
             combined[str(entry_id)] = {"files": files, "final_header": final_header}
-            downloaded.add(entry_id)
+            identity = optional_save_identity(files[0]["path"])
+            if identity is not None:
+                downloaded.add(identity)
         except (OSError, ValueError, KeyError, TypeError):
             continue
     (output / "manifest.json").write_text(json.dumps(combined, indent=2) + "\n")
@@ -268,7 +271,7 @@ def download(options):
                 "kind": kind,
                 "owner": parts[2] if kind == "save" and len(parts) > 2 else "console",
                 "size": size,
-                "downloaded": entry_id in downloaded_ids,
+                "downloaded": kind == "save" and optional_save_identity(path, is_directory=True) in downloaded_ids,
             })
         emit("entries", entries=entries, users=users)
         if options.get("metadataOnly"):
@@ -360,7 +363,14 @@ def list_users(path):
 
 
 def list_inventory(path):
-    db = sqlite3.connect(path)
+    metadata_path = Path(path).expanduser().resolve()
+    if not metadata_path.is_file() or metadata_path.stat().st_size == 0:
+        raise ValueError(f"Metadata missing or empty: {metadata_path}. Browse console saves again.")
+    db = sqlite3.connect(metadata_path.as_uri() + "?mode=ro", uri=True)
+    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if not {"dir_entry_info_tbl", "user_info_tbl"}.issubset(tables):
+        db.close()
+        raise ValueError(f"Invalid transfer metadata: {metadata_path}. Browse console saves again.")
     rows = db.execute(
         "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
     ).fetchall()
@@ -385,7 +395,7 @@ def list_inventory(path):
             "kind": kind,
             "owner": parts[2] if kind == "save" and len(parts) > 2 else "console",
             "size": size,
-            "downloaded": entry_id in downloaded_ids,
+            "downloaded": kind == "save" and optional_save_identity(save_path, is_directory=True) in downloaded_ids,
         })
     emit("inventory", entries=entries, users=users)
 
