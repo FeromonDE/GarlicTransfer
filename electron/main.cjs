@@ -563,6 +563,7 @@ ipcMain.handle('transfer:upload', (_event, options) => startUpload(options));
 ipcMain.handle('transfer:users', (_event, metadataPath) => getUsers(metadataPath));
 ipcMain.handle('transfer:inventory', (_event, metadataPath) => getInventory(metadataPath));
 ipcMain.handle('local:inventory', (_event, assets) => runLocalSaveOperation('list', [assets]));
+ipcMain.handle('local:profiles', (_event, assets) => runLocalSaveOperation('profiles', [assets]));
 ipcMain.handle('local:export', async (_event, { assets, entryId, filename }) => {
   if (active) throw new Error('stop the active transfer before exporting a local save');
   const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] });

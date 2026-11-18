@@ -190,7 +190,7 @@ test('My Saves tab exposes the complete local workflow', () => {
   const preload = fs.readFileSync(path.join(root, 'electron', 'preload.cjs'), 'utf8');
   const renderer = fs.readFileSync(path.join(root, 'electron', 'my_saves.js'), 'utf8');
   for (const id of [
-    'mySaveEntries', 'myTitleEntries', 'mySavesBackBtn', 'decryptExternalBtn', 'mySaveDecryptBtn', 'mySaveResignBtn',
+    'mySaveEntries', 'myTitleEntries', 'mySavesBackBtn', 'localConsoleSelect', 'localUserSelect', 'decryptExternalBtn', 'mySaveDecryptBtn', 'mySaveResignBtn',
     'mySaveExportBtn', 'mySaveImportBtn', 'exportDecryptedBtn', 'addFilesBtn',
     'encryptSaveBtn', 'editorMode', 'saveFileBtn', 'saveEncryptFileBtn', 'saveMoreBtn', 'decryptExportBtn', 'deleteFileBtn',
     'uploadSaveBtn', 'uploadEncryptedBtn', 'workspaceMoreBtn', 'fileMoreBtn',
@@ -202,7 +202,7 @@ test('My Saves tab exposes the complete local workflow', () => {
   assert.match(renderer, /operation: 'encrypt'/);
   assert.match(renderer, /operation: 'resign'/);
   assert.match(renderer, /editorDirty/);
-  for (const method of ['chooseInput', 'localFile', 'backupLocal', 'encryptLocal', 'read', 'write', 'add', 'delete', 'downloadFile', 'downloadArchive', 'run']) {
+  for (const method of ['chooseInput', 'localFile', 'localProfiles', 'backupLocal', 'encryptLocal', 'read', 'write', 'add', 'delete', 'downloadFile', 'downloadArchive', 'run']) {
     assert.match(preload, new RegExp(`${method}:`));
   }
 });

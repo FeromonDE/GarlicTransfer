@@ -486,3 +486,6 @@ tr:hover td { background: rgba(255,255,255,.02); }
   .section-heading { flex-direction: column; }
   .workspace-grid { grid-template-columns: 1fr; }
 }
+
+.profile-selectors { display: flex; flex: 1; flex-wrap: wrap; gap: 12px; }
+.profile-selectors label { flex: 1 1 180px; max-width: 300px; }

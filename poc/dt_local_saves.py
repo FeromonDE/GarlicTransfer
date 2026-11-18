@@ -53,6 +53,27 @@ def local_inventory(assets, include_warnings=False):
     return entries
 
 
+def local_profiles(root):
+    root = Path(root).expanduser()
+    candidates = [root] + [path for path in root.iterdir() if path.is_dir()] if root.is_dir() else []
+    profiles = []
+    for assets in candidates:
+        if not (assets / "manifest.json").is_file() and not (assets / "metadata.db").is_file():
+            continue
+        inventory = local_inventory(assets, include_warnings=True)
+        entries = inventory["entries"]
+        if not entries and not (assets / "metadata.db").is_file():
+            continue
+        profiles.append({
+            "id": assets.name,
+            "path": str(assets),
+            "users": sorted({entry["owner"] for entry in entries if entry["owner"]}),
+            "save_count": sum(len(entry["files"]) for entry in entries),
+        })
+    profiles.sort(key=lambda profile: profile["id"])
+    return {"profiles": profiles}
+
+
 def selected_file(assets, entry_id, filename):
     actual_id, entry = load_manifest(assets, entry_id)
     for item in entry["files"]:
@@ -124,6 +145,8 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
     list_parser = subparsers.add_parser("list")
     list_parser.add_argument("assets")
+    profiles_parser = subparsers.add_parser("profiles")
+    profiles_parser.add_argument("assets")
     for name in ("export", "import"):
         command = subparsers.add_parser(name)
         command.add_argument("assets")
@@ -134,6 +157,8 @@ def main():
     try:
         if args.command == "list":
             result = local_inventory(args.assets, include_warnings=True)
+        elif args.command == "profiles":
+            result = local_profiles(args.assets)
         elif args.command == "export":
             destination = export_save(args.assets, args.entry_id, args.filename, args.destination)
             result = {"destination": str(destination)}

@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('saveTransfer', {
   users: (metadataPath) => ipcRenderer.invoke('transfer:users', metadataPath),
   inventory: (metadataPath) => ipcRenderer.invoke('transfer:inventory', metadataPath),
   localSaves: (assets) => ipcRenderer.invoke('local:inventory', assets),
+  localProfiles: (assets) => ipcRenderer.invoke('local:profiles', assets),
   exportLocalSave: (options) => ipcRenderer.invoke('local:export', options),
   importLocalSave: (options) => ipcRenderer.invoke('local:import', options),
   discover: (options) => ipcRenderer.invoke('transfer:discover', options),

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from poc.dt_local_saves import export_save, import_save, local_inventory
+from poc.dt_local_saves import export_save, import_save, local_inventory, local_profiles
 
 
 class LocalSaveTests(unittest.TestCase):
@@ -83,6 +83,18 @@ class LocalSaveTests(unittest.TestCase):
                 self.assertEqual(item["size"], len(payload))
                 self.assertEqual(item["sha256"], expected_hash)
                 self.assertEqual(struct.unpack_from("<Q", bytes.fromhex(item["header"]), 240)[0], len(payload))
+    def test_local_profiles_include_console_users_and_save_count(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            assets, entry_id = self.make_case(root / "console-a")
+            result = local_profiles(root / "console-a")
+            self.assertEqual(result["profiles"], [{
+                "id": assets.name,
+                "path": str(assets),
+                "users": ["18c60ea2"],
+                "save_count": 1,
+            }])
+
     def test_empty_inventory_is_not_an_error(self):
         with tempfile.TemporaryDirectory() as folder:
             assets = Path(folder) / "missing"

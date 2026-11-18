@@ -1,7 +1,8 @@
 const myControls = {};
 for (const id of [
   'mySavesTab', 'mySaveEntries', 'myTitleEntries', 'myTitleList', 'myTitleSaveList',
-  'mySavesBackBtn', 'mySavesLibraryLabel', 'refreshMySavesBtn', 'decryptExternalBtn', 'selectedSavePanel',
+  'mySavesBackBtn', 'mySavesLibraryLabel', 'localConsoleSelect', 'localUserSelect',
+  'refreshMySavesBtn', 'decryptExternalBtn', 'selectedSavePanel',
   'selectedSaveName', 'selectedSaveDetails', 'mySaveDecryptBtn', 'mySaveResignBtn', 'mySaveExportBtn',
   'saveMoreBtn', 'saveMoreOptions', 'decryptExportBtn', 'saveEncryptFileBtn',
   'uploadSaveBtn', 'uploadEncryptedBtn', 'workspaceMoreBtn', 'workspaceMoreOptions', 'fileMoreBtn', 'fileMoreOptions',
@@ -14,6 +15,7 @@ for (const id of [
 myControls.mySavesTab = document.getElementById('libraryPage');
 
 let mySaves = [];
+let localProfiles = [];
 let selectedTitle = null;
 let selectedLocalSave = null;
 let decryptedWorkspace = null;
@@ -168,9 +170,78 @@ function selectMySave(save) {
   myStatus(`${save.file.file} selected. Choose what you want to do next.`);
 }
 
+async function selectLocalConsole(profileId) {
+  const profile = localProfiles.find((candidate) => candidate.id === profileId);
+  if (!profile) {
+    mySaves = [];
+    renderMySaves();
+    myStatus('No downloaded saves were found in this profile.');
+    return;
+  }
+  if (decryptedWorkspace && !window.confirm('Switch profiles and close the current decrypted files?')) {
+    myControls.localConsoleSelect.value = options().assets.split(/[\\/]/).pop();
+    return;
+  }
+  if (decryptedWorkspace) closeMyWorkspace();
+  selectedTitle = null;
+  selectedLocalSave = null;
+  myControls.selectedSavePanel.hidden = true;
+  controls.output.value = profile.path;
+  controls.assets.value = profile.path;
+  controls.metadata.value = '';
+  const previousUser = myControls.localUserSelect.value;
+  myControls.localUserSelect.replaceChildren();
+  const allUsers = document.createElement('option');
+  allUsers.value = '';
+  allUsers.textContent = 'All users';
+  myControls.localUserSelect.appendChild(allUsers);
+  for (const owner of profile.users) {
+    const option = document.createElement('option');
+    option.value = owner;
+    option.textContent = owner;
+    myControls.localUserSelect.appendChild(option);
+  }
+  myControls.localUserSelect.value = profile.users.includes(previousUser) ? previousUser : '';
+  await refreshMySaves();
+  myStatus(`${profile.id}: ${mySaves.length} save file(s)${myControls.localUserSelect.value ? ` for ${myControls.localUserSelect.value}` : ''}.`);
+}
+
+async function loadLocalProfiles() {
+  const root = profileRoot || options().output;
+  const result = await window.saveTransfer.localProfiles(root);
+  localProfiles = result.profiles || [];
+  const current = options().assets.split(/[\\/]/).pop();
+  const selected = localProfiles.find((profile) => profile.id === current) || localProfiles[0];
+  myControls.localConsoleSelect.replaceChildren();
+  for (const profile of localProfiles) {
+    const option = document.createElement('option');
+    option.value = profile.id;
+    option.textContent = `${profile.id} (${profile.save_count} saves)`;
+    myControls.localConsoleSelect.appendChild(option);
+  }
+  if (selected) {
+    myControls.localConsoleSelect.value = selected.id;
+    await selectLocalConsole(selected.id);
+  } else {
+    await selectLocalConsole('');
+  }
+}
+
+myControls.localConsoleSelect.addEventListener('change', () => runMyOperation(() => selectLocalConsole(myControls.localConsoleSelect.value)));
+myControls.localUserSelect.addEventListener('change', () => runMyOperation(async () => {
+  selectedTitle = null;
+  selectedLocalSave = null;
+  myControls.selectedSavePanel.hidden = true;
+  await refreshMySaves();
+  myStatus(`${mySaves.length} save file(s) in this view.`);
+}));
+
 async function refreshMySaves() {
   const result = await window.saveTransfer.localSaves(options().assets);
-  mySaves = (result.entries || []).flatMap((entry) => entry.files.map((file) => ({ entry, file })));
+  const owner = myControls.localUserSelect.value.toLowerCase();
+  mySaves = (result.entries || [])
+    .filter((entry) => !owner || entry.owner.toLowerCase() === owner)
+    .flatMap((entry) => entry.files.map((file) => ({ entry, file })));
   if (selectedLocalSave) {
     selectedLocalSave = mySaves.find((save) => localSaveKey(save) === localSaveKey(selectedLocalSave)) || null;
     myControls.selectedSavePanel.hidden = !selectedLocalSave;
@@ -288,8 +359,8 @@ async function decryptInputs(inputs) {
 }
 
 myControls.refreshMySavesBtn.addEventListener('click', () => runMyOperation(async () => {
-  const count = await refreshMySaves();
-  myStatus(count ? `Found ${count} local save file(s).` : 'No downloaded saves yet. Use the Transfer tab to download one.');
+  await loadLocalProfiles();
+  myStatus(mySaves.length ? `Found ${mySaves.length} local save file(s).` : 'No downloaded saves yet. Use the Transfer tab to download one.');
 }));
 
 myControls.decryptExternalBtn.addEventListener('click', () => runMyOperation(async () => {
@@ -539,8 +610,8 @@ for (const tab of document.querySelectorAll('.nav-item')) {
     myControls.mySavesTab.hidden = tab.dataset.page !== 'library';
     if (tab.dataset.page === 'library') {
       runMyOperation(async () => {
-        const count = await refreshMySaves();
-        myStatus(count ? 'Select a save to get started.' : 'Download a save with the Transfer tab, or decrypt another save.');
+        await loadLocalProfiles();
+        myStatus(mySaves.length ? 'Select a save to get started.' : 'Download a save with the Transfer tab, or decrypt another save.');
       });
     }
   });
