@@ -167,124 +167,147 @@
 
       <!-- ═══ Library ═══ -->
       <section id="libraryPage" class="page" hidden>
-        <div class="page-header">
-          <h2>My Saves</h2>
-          <p class="page-desc">Choose a title, decrypt and edit a save, then encrypt and upload it.</p>
-        </div>
         <button id="browseLocalBtn" type="button" hidden>Browse local saves</button>
-        <section class="card">
-          <div class="section-heading">
-            <div class="profile-selectors">
-              <label>Console
-                <select id="localConsoleSelect"><option value="">Select a local console</option></select>
-              </label>
-              <label>User
-                <select id="localUserSelect"><option value="">All users</option></select>
-              </label>
-            </div>
-            <div class="button-row">
-              <button id="refreshMySavesBtn" class="secondary" type="button">Refresh</button>
-              <button id="decryptExternalBtn" class="secondary" type="button">Decrypt another save…</button>
-            </div>
-          </div>
-          <div class="library-heading">
-            <button id="mySavesBackBtn" class="secondary" type="button" hidden>← All titles</button>
-            <span id="mySavesLibraryLabel">All titles</span>
-          </div>
-          <div id="myTitleList" class="table-wrap">
-            <table>
-              <thead><tr><th>Title</th><th>Saves</th><th>Total size</th><th></th></tr></thead>
-              <tbody id="myTitleEntries"><tr><td colspan="4" class="empty">Download a save with the Transfer tab to see it here.</td></tr></tbody>
-            </table>
-          </div>
-          <div id="myTitleSaveList" class="table-wrap" hidden>
-            <table>
-              <thead><tr><th>Save file</th><th>Size</th><th></th></tr></thead>
-              <tbody id="mySaveEntries"></tbody>
-            </table>
-          </div>
-        </section>
 
-        <section id="selectedSavePanel" class="card" hidden>
-          <span class="step-label">Selected save</span>
-          <h2 id="selectedSaveName">Save</h2>
-          <p id="selectedSaveDetails" class="hint"></p>
-          <div class="save-actions">
-            <button id="mySaveDecryptBtn" class="btn-primary" type="button">Decrypt &amp; edit <small>Make changes to this save</small></button>
-            <button id="uploadSaveBtn" class="secondary" type="button">Upload to PS5</button>
-            <div class="dropdown" id="saveExportMenu">
-              <button id="saveMoreBtn" class="secondary" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
-              <div id="saveMoreOptions" class="dropdown-content" hidden>
-                <button id="decryptExportBtn" type="button">Decrypt and export</button>
-                <button id="mySaveExportBtn" type="button">Export original</button>
-                <button id="mySaveImportBtn" type="button">Replace with another save…</button>
-                <button id="mySaveResignBtn" type="button">Resign</button>
-              </div>
-            </div>
-          </div>
-          <div id="resignPanel" class="operation-form" hidden>
-            <label>Account ID to resign for
-              <input id="resignAccountId" maxlength="16" spellcheck="false" placeholder="16 hexadecimal characters">
-            </label>
-            <p class="hint">The original save remains untouched. You will choose where to save the resigned copy.</p>
-            <button id="confirmResignBtn" class="secondary" type="button">Resign &amp; export</button>
-          </div>
-        </section>
+        <div class="wizard-steps">
+          <button class="wizard-step active" data-step="0" type="button"><span class="step-num">1</span> Browse</button>
+          <span class="step-arrow"></span>
+          <button class="wizard-step" data-step="1" type="button"><span class="step-num">2</span> Select</button>
+          <span class="step-arrow"></span>
+          <button class="wizard-step" data-step="2" type="button"><span class="step-num">3</span> Edit</button>
+        </div>
 
-        <section id="workspacePanel" class="card" hidden>
-          <div class="section-heading">
-            <div>
-              <span class="step-label">Decrypted workspace</span>
-              <h2>Edit your save</h2>
-              <p id="workspaceSummary" class="hint"></p>
+        <div class="wizard-viewport">
+          <!-- Step 0: Browse -->
+          <div class="wizard-panel active" data-wizard="0">
+            <div class="page-header">
+              <h2>Browse Saves</h2>
+              <p class="page-desc">Pick a console profile and choose a title.</p>
             </div>
-          </div>
-          <div class="save-actions workspace-actions">
-            <button id="encryptSaveBtn" class="btn-primary" type="button">Save &amp; encrypt <small>Replace the local save with your edits</small></button>
-            <button id="uploadEncryptedBtn" class="secondary" type="button">Upload to PS5</button>
-            <div class="dropdown" id="workspaceMoreMenu">
-              <button id="workspaceMoreBtn" class="secondary" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
-              <div id="workspaceMoreOptions" class="dropdown-content" hidden>
-                <button id="exportDecryptedBtn" type="button">Export decrypted ZIP</button>
-                <button id="addFilesBtn" type="button">Add files…</button>
-                <button id="closeWorkspaceBtn" type="button">Close files</button>
+            <section class="card">
+              <div class="section-heading">
+                <div class="profile-selectors">
+                  <label>Console
+                    <select id="localConsoleSelect"><option value="">Select a local console</option></select>
+                  </label>
+                  <label>User
+                    <select id="localUserSelect"><option value="">All users</option></select>
+                  </label>
+                </div>
+                <div class="button-row">
+                  <button id="refreshMySavesBtn" class="secondary" type="button">Refresh</button>
+                  <button id="decryptExternalBtn" class="secondary" type="button">Decrypt another save…</button>
+                </div>
               </div>
-            </div>
-          </div>
-          <div id="encryptPanel" class="operation-form" hidden>
-            <label>Account ID for the encrypted save
-              <input id="encryptAccountId" maxlength="16" spellcheck="false" placeholder="16 hexadecimal characters">
-            </label>
-            <button id="confirmEncryptBtn" class="btn-primary" type="button">Encrypt now</button>
-          </div>
-          <div class="workspace-grid">
-            <div class="table-wrap workspace-files">
-              <table>
-                <thead><tr><th>File</th><th>Size</th></tr></thead>
-                <tbody id="workspaceFiles"></tbody>
-              </table>
-            </div>
-            <div id="fileEditorPanel" class="file-editor" hidden>
-              <div class="editor-heading">
-                <strong id="editorFileName"></strong>
-                <select id="editorMode" aria-label="Editor mode"><option value="text">Text</option><option value="hex">Hex</option></select>
+              <div class="library-heading">
+                <button id="mySavesBackBtn" class="secondary" type="button" hidden>← All titles</button>
+                <span id="mySavesLibraryLabel">All titles</span>
               </div>
-              <textarea id="fileEditor" spellcheck="false" aria-label="Save file editor"></textarea>
-              <p id="editorHint" class="hint">Select a file to edit. Metadata and sce_sys files are protected from deletion.</p>
-              <div class="button-row">
-                <button id="saveEncryptFileBtn" class="btn-primary" type="button">Save and encrypt</button>
-                <button id="saveFileBtn" class="secondary" type="button">Save changes</button>
-                <div class="dropdown" id="fileMoreMenu">
-                  <button id="fileMoreBtn" class="secondary" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
-                  <div id="fileMoreOptions" class="dropdown-content" hidden>
-                    <button id="downloadFileBtn" type="button">Export file</button>
-                    <button id="deleteFileBtn" class="danger" type="button">Delete file</button>
+              <div id="myTitleList" class="table-wrap">
+                <table>
+                  <thead><tr><th>Title</th><th>Saves</th><th>Total size</th><th></th></tr></thead>
+                  <tbody id="myTitleEntries"><tr><td colspan="4" class="empty">Download a save with the Transfer tab to see it here.</td></tr></tbody>
+                </table>
+              </div>
+              <div id="myTitleSaveList" class="table-wrap" hidden>
+                <table>
+                  <thead><tr><th>Save file</th><th>Size</th><th></th></tr></thead>
+                  <tbody id="mySaveEntries"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <!-- Step 1: Select save + actions -->
+          <div class="wizard-panel" data-wizard="1">
+            <div class="page-header">
+              <h2 id="selectedSaveName">Save</h2>
+              <p id="selectedSaveDetails" class="page-desc hint"></p>
+            </div>
+            <section id="selectedSavePanel" class="card">
+              <div class="save-actions">
+                <button id="mySaveDecryptBtn" class="btn-primary" type="button">Decrypt &amp; edit <small>Make changes to this save</small></button>
+                <button id="uploadSaveBtn" class="secondary" type="button">Upload to PS5</button>
+                <div class="dropdown" id="saveExportMenu">
+                  <button id="saveMoreBtn" class="secondary" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
+                  <div id="saveMoreOptions" class="dropdown-content" hidden>
+                    <button id="decryptExportBtn" type="button">Decrypt and export</button>
+                    <button id="mySaveExportBtn" type="button">Export original</button>
+                    <button id="mySaveImportBtn" type="button">Replace with another save…</button>
+                    <button id="mySaveResignBtn" type="button">Resign</button>
                   </div>
                 </div>
               </div>
-            </div>
+              <div id="resignPanel" class="operation-form" hidden>
+                <label>Account ID to resign for
+                  <input id="resignAccountId" maxlength="16" spellcheck="false" placeholder="16 hexadecimal characters">
+                </label>
+                <p class="hint">The original save remains untouched. You will choose where to save the resigned copy.</p>
+                <button id="confirmResignBtn" class="secondary" type="button">Resign &amp; export</button>
+              </div>
+            </section>
+            <button class="wizard-back" data-go="0" type="button">← Back to browse</button>
           </div>
-        </section>
+
+          <!-- Step 2: Editor workspace -->
+          <div class="wizard-panel" data-wizard="2">
+            <section id="workspacePanel" class="card workspace-card">
+              <div class="workspace-header">
+                <div>
+                  <h2>Edit your save</h2>
+                  <p id="workspaceSummary" class="hint"></p>
+                </div>
+                <div class="workspace-toolbar">
+                  <button id="encryptSaveBtn" class="btn-primary" type="button">Save &amp; encrypt</button>
+                  <button id="uploadEncryptedBtn" type="button">Upload to PS5</button>
+                  <div class="dropdown" id="workspaceMoreMenu">
+                    <button id="workspaceMoreBtn" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
+                    <div id="workspaceMoreOptions" class="dropdown-content" hidden>
+                      <button id="exportDecryptedBtn" type="button">Export decrypted ZIP</button>
+                      <button id="addFilesBtn" type="button">Add files…</button>
+                      <button id="closeWorkspaceBtn" type="button">Close files</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div id="encryptPanel" class="operation-form" hidden>
+                <label>Account ID for the encrypted save
+                  <input id="encryptAccountId" maxlength="16" spellcheck="false" placeholder="16 hexadecimal characters">
+                </label>
+                <button id="confirmEncryptBtn" class="btn-primary" type="button">Encrypt now</button>
+              </div>
+              <div class="workspace-grid">
+                <div class="table-wrap workspace-files">
+                  <table>
+                    <thead><tr><th>File</th><th>Size</th></tr></thead>
+                    <tbody id="workspaceFiles"></tbody>
+                  </table>
+                </div>
+                <div id="fileEditorPanel" class="file-editor" hidden>
+                  <div class="editor-heading">
+                    <strong id="editorFileName"></strong>
+                    <select id="editorMode" aria-label="Editor mode"><option value="text">Text</option><option value="hex">Hex</option></select>
+                  </div>
+                  <textarea id="fileEditor" spellcheck="false" aria-label="Save file editor"></textarea>
+                  <p id="editorHint" class="hint">Select a file to edit. Metadata and sce_sys files are protected from deletion.</p>
+                  <div class="editor-actions">
+                    <button id="saveEncryptFileBtn" class="btn-primary editor-btn" type="button">Save &amp; encrypt</button>
+                    <button id="saveFileBtn" class="editor-btn" type="button">Save file</button>
+                    <div class="dropdown" id="fileMoreMenu">
+                      <button id="fileMoreBtn" class="editor-btn" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
+                      <div id="fileMoreOptions" class="dropdown-content" hidden>
+                        <button id="downloadFileBtn" type="button">Export file</button>
+                        <button id="deleteFileBtn" class="danger" type="button">Delete file</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <button class="wizard-back" data-go="1" type="button">← Back to save</button>
+          </div>
+        </div>
+
         <section class="card status-panel"><p id="mySavesStatus" aria-live="polite">Select a save to get started.</p></section>
         <details class="card log-panel"><summary>Save activity</summary><pre id="mySavesLog" aria-live="polite"></pre></details>
         <section id="localBrowser" class="card" hidden><table><tbody id="localEntries"></tbody></table></section>

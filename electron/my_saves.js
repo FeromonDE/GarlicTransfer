@@ -14,6 +14,31 @@ for (const id of [
 ]) myControls[id] = document.getElementById(id);
 myControls.mySavesTab = document.getElementById('libraryPage');
 
+let currentWizardStep = 0;
+function goToLibraryStep(step) {
+  currentWizardStep = step;
+  for (const panel of document.querySelectorAll('.wizard-panel')) {
+    const isTarget = panel.dataset.wizard === String(step);
+    panel.classList.toggle('active', isTarget);
+  }
+  for (const btn of document.querySelectorAll('.wizard-step')) {
+    const s = Number(btn.dataset.step);
+    btn.classList.toggle('active', s === step);
+    btn.classList.toggle('done', s < step);
+  }
+}
+for (const btn of document.querySelectorAll('.wizard-step')) {
+  btn.addEventListener('click', () => {
+    const target = Number(btn.dataset.step);
+    if (target === 1 && !selectedLocalSave) return;
+    if (target === 2 && !decryptedWorkspace) return;
+    goToLibraryStep(target);
+  });
+}
+for (const btn of document.querySelectorAll('.wizard-back')) {
+  btn.addEventListener('click', () => goToLibraryStep(Number(btn.dataset.go)));
+}
+
 let mySaves = [];
 let localProfiles = [];
 let selectedTitle = null;
@@ -157,6 +182,7 @@ myControls.mySavesBackBtn.addEventListener('click', () => {
   selectedLocalSave = null;
   myControls.selectedSavePanel.hidden = true;
   renderMySaves();
+  goToLibraryStep(0);
   myStatus('Select a title to see its saves.');
 });
 
@@ -167,6 +193,7 @@ function selectMySave(save) {
   myControls.selectedSaveDetails.textContent = `${save.file.file} · Entry ${save.entry.id} · ${(save.file.size / 0x100000).toFixed(1)} MiB · ${save.entry.title}`;
   myControls.resignPanel.hidden = true;
   renderMySaves();
+  goToLibraryStep(1);
   myStatus(`${save.file.file} selected. Choose what you want to do next.`);
 }
 
@@ -262,6 +289,7 @@ function updateMyFileActions() {
 function renderWorkspace() {
   myControls.workspacePanel.hidden = !decryptedWorkspace;
   if (!decryptedWorkspace || !workspaceDetails) return;
+  goToLibraryStep(2);
   myControls.workspaceSummary.textContent = `${workspaceDetails.files.length} file(s)${workspaceDetails.titleId ? ` · ${workspaceDetails.titleId}` : ''}${workspaceDetails.accountId ? ` · Account ID ${workspaceDetails.accountId}` : ''}`;
   myControls.encryptAccountId.value = workspaceDetails.accountId || myControls.encryptAccountId.value;
   myControls.workspaceFiles.replaceChildren();
@@ -333,6 +361,7 @@ function closeMyWorkspace() {
   editorDirty = false;
   myControls.workspacePanel.hidden = true;
   myControls.encryptPanel.hidden = true;
+  goToLibraryStep(selectedLocalSave ? 1 : 0);
   myStatus('Decrypted files closed. Your original save is still selected.');
 }
 
@@ -609,6 +638,7 @@ for (const tab of document.querySelectorAll('.nav-item')) {
   tab.addEventListener('click', () => {
     myControls.mySavesTab.hidden = tab.dataset.page !== 'library';
     if (tab.dataset.page === 'library') {
+      goToLibraryStep(decryptedWorkspace ? 2 : selectedLocalSave ? 1 : 0);
       runMyOperation(async () => {
         await loadLocalProfiles();
         myStatus(mySaves.length ? 'Select a save to get started.' : 'Download a save with the Transfer tab, or decrypt another save.');

@@ -491,9 +491,9 @@ function finish(error) {
 
 app.whenReady().then(() => {
   window = new BrowserWindow({
-    width: 1120,
-    height: 860,
-    minWidth: 900,
+    width: 1380,
+    height: 900,
+    minWidth: 1000,
     minHeight: 680,
     backgroundColor: '#11151b',
     webPreferences: {
