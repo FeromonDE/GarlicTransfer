@@ -226,3 +226,19 @@ test('hex editor includes UTF-8 text and parses it back losslessly', () => {
   context.myControls.fileEditor.value = formatted;
   assert.deepEqual([...context.editorBytes()], [...original]);
 });
+
+test('hex and UTF-8 selections map to the same byte offsets', () => {
+  const source = fs.readFileSync(path.join(root, 'electron', 'my_saves.js'), 'utf8');
+  const start = source.indexOf('function bytesToHex');
+  const end = source.indexOf('let syncingEditorSelection');
+  const context = {};
+  vm.runInNewContext(source.slice(start, end), context);
+  const original = new Uint8Array([0x41, 0x00, 0x42, 0x7e, 0x80]);
+  const hex = context.bytesToHex(original);
+  const utf = context.bytesToUtfLines(original);
+  assert.equal(context.byteOffsetAt(hex, 10, false), 0);
+  assert.equal(context.byteOffsetAt(hex, 58, false), 0);
+  assert.equal(context.byteOffsetAt(utf, 1, true), 0);
+  assert.equal(context.positionForByte(hex, 0, false), 10);
+  assert.equal(context.positionForByte(utf, 0, true), 1);
+});

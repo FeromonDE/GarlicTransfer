@@ -9,7 +9,7 @@ for (const id of [
   'mySaveImportBtn', 'resignPanel', 'resignAccountId', 'confirmResignBtn', 'workspacePanel',
   'workspaceSummary', 'closeWorkspaceBtn', 'exportDecryptedBtn', 'addFilesBtn', 'encryptSaveBtn',
   'encryptPanel', 'encryptAccountId', 'confirmEncryptBtn', 'workspaceFiles', 'fileEditorPanel',
-  'editorFileName', 'editorMode', 'fileEditor', 'editorHint', 'editorSearch', 'editorFindNext',
+  'editorFileName', 'editorMode', 'fileEditor', 'editorUtfView', 'editorHint', 'editorSearch', 'editorFindNext',
   'editorOffset', 'editorGoOffset', 'editorRevert', 'editorByteCount', 'saveFileBtn', 'downloadFileBtn',
   'deleteFileBtn', 'mySavesStatus', 'mySavesLog',
 ]) myControls[id] = document.getElementById(id);
@@ -319,6 +319,57 @@ function bytesToHex(bytes) {
   return lines.join('\n');
 }
 
+function bytesToUtfLines(bytes) {
+  const lines = [];
+  for (let offset = 0; offset < bytes.length; offset += 16) {
+    const chunk = [...bytes.slice(offset, offset + 16)];
+    lines.push(`|${chunk.map((byte) => byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : '.').join('')}|`);
+  }
+  return lines.join('\n');
+}
+
+function lineStart(text, line) {
+  return text.split('\n').slice(0, line).reduce((total, value) => total + value.length + 1, 0);
+}
+
+function byteOffsetAt(text, position, utfOnly) {
+  const lines = text.split('\n');
+  let remaining = position;
+  for (let line = 0; line < lines.length; line++) {
+    if (remaining <= lines[line].length) {
+      if (utfOnly) return remaining >= 1 && remaining <= 16 ? line * 16 + remaining - 1 : -1;
+      if (remaining >= 10 && remaining < 57) return line * 16 + Math.floor((remaining - 10) / 3);
+      if (remaining >= 58 && remaining - 58 < 16) return line * 16 + remaining - 58;
+      return -1;
+    }
+    remaining -= lines[line].length + 1;
+  }
+  return -1;
+}
+
+function positionForByte(text, offset, utfOnly) {
+  const line = Math.floor(offset / 16);
+  const byte = offset % 16;
+  return lineStart(text, line) + (utfOnly ? 1 + byte : 10 + byte * 3);
+}
+
+let syncingEditorSelection = false;
+function syncEditorSelection(source) {
+  if (syncingEditorSelection) return;
+  const utfView = source === myControls.editorUtfView;
+  const target = utfView ? myControls.fileEditor : myControls.editorUtfView;
+  const start = byteOffsetAt(source.value, source.selectionStart, utfView);
+  let end = byteOffsetAt(source.value, source.selectionEnd, utfView);
+  if (start < 0 || end < 0) return;
+  if (end === start) end++;
+  const targetStart = positionForByte(target.value, start, !utfView);
+  const targetEnd = positionForByte(target.value, end, !utfView);
+  syncingEditorSelection = true;
+  target.setSelectionRange(targetStart, targetEnd);
+  target.scrollTop = source.scrollTop;
+  syncingEditorSelection = false;
+}
+
 function editorBytes() {
   if (myControls.editorMode.value === 'text') return new TextEncoder().encode(myControls.fileEditor.value);
   const text = myControls.fileEditor.value
@@ -413,6 +464,8 @@ function renderEditor() {
   myControls.fileEditor.value = myControls.editorMode.value === 'hex'
     ? bytesToHex(selectedFileBytes)
     : new TextDecoder().decode(selectedFileBytes);
+  myControls.editorUtfView.hidden = myControls.editorMode.value !== 'hex';
+  if (myControls.editorMode.value === 'hex') myControls.editorUtfView.value = bytesToUtfLines(selectedFileBytes);
   editorDirty = false;
   myControls.saveFileBtn.textContent = 'Save changes';
   myControls.editorHint.textContent = myControls.editorMode.value === 'hex'
@@ -686,10 +739,22 @@ myControls.editorOffset.addEventListener('keydown', (event) => {
 myControls.editorRevert.addEventListener('click', () => runMyOperation(async () => {
   if (selectedWorkspaceFile) await openWorkspaceFile(selectedWorkspaceFile);
 }));
+for (const source of [myControls.fileEditor, myControls.editorUtfView]) {
+  for (const eventName of ['click', 'keyup', 'select']) {
+    source.addEventListener(eventName, () => syncEditorSelection(source));
+  }
+  source.addEventListener('scroll', () => {
+    const target = source === myControls.fileEditor ? myControls.editorUtfView : myControls.fileEditor;
+    target.scrollTop = source.scrollTop;
+  });
+}
 myControls.fileEditor.addEventListener('input', () => {
   editorDirty = true;
   myControls.saveFileBtn.textContent = 'Save changes *';
   updateEditorByteCount();
+  if (myControls.editorMode.value === 'hex') {
+    try { myControls.editorUtfView.value = bytesToUtfLines(editorBytes()); } catch {}
+  }
 });
 async function saveCurrentEditorFile() {
   if (!selectedWorkspaceFile) return false;
