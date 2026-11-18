@@ -144,24 +144,24 @@
           </button>
         </div>
 
-        <section id="uploadDestination" class="card upload-fields" hidden>
+        <section id="uploadDestination" class="card upload-dest" hidden>
           <h3>Upload destination</h3>
           <label id="userSelectLabel" hidden>Upload to user
             <select id="userSelect"></select>
           </label>
           <label id="uploadSaveSelectLabel" hidden>Select saves to upload (Ctrl/Cmd-click for multiple)
-            <select id="uploadSaveSelect" multiple size="6"></select>
+            <select id="uploadSaveSelect" multiple size="5"></select>
           </label>
-          <button id="confirmUploadBtn" class="btn-primary" hidden type="button">Upload</button>
-          <div id="externalUploadControls" class="operation-form" hidden>
-            <div class="button-row">
-              <button id="addExternalSaveBtn" class="secondary" type="button">Add external save…</button>
-              <button id="addExternalFolderBtn" class="secondary" type="button">Add save folder…</button>
+          <div id="externalUploadControls" class="upload-external" hidden>
+            <div class="upload-external-btns">
+              <button id="addExternalSaveBtn" type="button">Add external save…</button>
+              <button id="addExternalFolderBtn" type="button">Add save folder…</button>
             </div>
             <label>Game title ID (for external save)
-              <input id="externalTitleId" placeholder="PPSA12345" maxlength="9">
+              <input id="externalTitleId" placeholder="PPSA12345" spellcheck="false" maxlength="9">
             </label>
           </div>
+          <button id="confirmUploadBtn" class="btn-primary upload-confirm" hidden type="button">Upload</button>
         </section>
       </section>
 
