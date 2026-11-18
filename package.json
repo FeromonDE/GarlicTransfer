@@ -1,6 +1,6 @@
 {
   "name": "garlic-transfer",
-  "version": "0.2.18",
+  "version": "0.3.0",
   "private": true,
   "description": "Guided PS5 save download and upload using local or volunteer PPR oracles",
   "repository": {
@@ -15,7 +15,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/renderer.js && node --check electron/remote_oracle.cjs && node --check electron/config.cjs && node --check electron/discovery.cjs && node --check electron/titles.cjs && node --check electron/paths.cjs && node --check electron/pairing_store.cjs",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/renderer.js && node --check electron/my_saves.js && node --check electron/save_editor.cjs && node --check electron/remote_oracle.cjs && node --check electron/config.cjs && node --check electron/discovery.cjs && node --check electron/titles.cjs && node --check electron/paths.cjs && node --check electron/pairing_store.cjs && node --check electron/console_names.cjs",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -44,7 +44,9 @@
       {
         "from": "data",
         "to": "data",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "requirements.txt",
@@ -53,19 +55,25 @@
       {
         "from": "build/windows-python",
         "to": "python",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": "build/linux",
         "to": "build/linux",
-        "filter": ["*.policy"]
+        "filter": [
+          "*.policy"
+        ]
       }
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "extraFiles": [
@@ -85,7 +93,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "category": "public.app-category.utilities",
@@ -95,11 +105,15 @@
       "target": [
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "Utility",

@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -107,6 +108,28 @@ def write_upload_manifest(output, entries):
     output.write_text(json.dumps({str(entry_id): entry for entry_id, entry in entries.items()}, indent=2) + "\n")
 
 
+def write_json_replace(path, document):
+    path = Path(path)
+    temporary = path.with_name(path.name + ".upload.tmp")
+    temporary.write_text(json.dumps(document, indent=2) + "\n")
+    os.replace(temporary, path)
+
+
+def persist_manifest_entry(assets, entry_id, entry):
+    assets = Path(assets).expanduser()
+    root_path = assets / "manifest.json"
+    document = json.loads(root_path.read_text()) if root_path.is_file() else {}
+    document[str(entry_id)] = entry
+    write_json_replace(root_path, document)
+
+    entry_path = assets / str(entry_id) / "manifest.json"
+    document = json.loads(entry_path.read_text()) if entry_path.is_file() else {}
+    document["entry_id"] = entry_id
+    document["files"] = entry["files"]
+    document[str(entry_id)] = entry
+    write_json_replace(entry_path, document)
+
+
 def backup_size(files):
     return sum(
         int(item["size"])
@@ -184,6 +207,44 @@ def infer_title_id(title_id, files):
     raise ValueError("title ID must be exactly 9 letters or digits")
 
 
+def save_identity(path, is_directory=False):
+    path = str(path)
+    parts = path.strip("/").split("/")
+    for marker in ("savedata_prospero", "savedata"):
+        if marker not in parts:
+            continue
+        index = parts.index(marker)
+        if index + 1 >= len(parts) or len(parts) < 3:
+            break
+        title_id = parts[index + 1].upper()
+        if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
+            break
+        remainder = parts[index + 2:] if is_directory or path.endswith("/") else parts[index + 2:-1]
+        return title_id, parts[2].lower(), "/".join(remainder)
+    raise ValueError(f"cannot determine a stable save identity from {path}")
+
+
+def optional_save_identity(path, is_directory=False):
+    try:
+        return save_identity(path, is_directory)
+    except ValueError:
+        return None
+
+
+def remap_upload_entry(entry, entry_id, source_id=None):
+    remapped = json.loads(json.dumps(entry))
+    for item in remapped["files"]:
+        header = bytearray.fromhex(item["header"])
+        struct.pack_into("<I", header, 4, entry_id)
+        item["header"] = header.hex()
+    final_header = bytearray.fromhex(remapped["final_header"])
+    struct.pack_into("<I", final_header, 4, entry_id)
+    remapped["final_header"] = final_header.hex()
+    if source_id is not None:
+        remapped["source_id"] = source_id
+    return remapped
+
+
 def find_downloaded_user(source_metadata, user_id):
     if not source_metadata:
         return None
@@ -200,6 +261,7 @@ def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user
     user_id = validate_user(user_id, user_name)
     target_user = find_downloaded_user(source_metadata, user_id)
     entry_id, upload_entry = load_manifest(assets, entry_id, expected_user_id=user_id)
+    persist_manifest_entry(assets, entry_id, upload_entry)
     files = upload_entry["files"]
     title_id = infer_title_id(title_id, files)
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
@@ -258,41 +320,49 @@ def create_external_save(output, user_id, title_id, image_path, assets, user_nam
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
         raise ValueError("title ID must be exactly 9 letters or digits")
     image_path = Path(image_path).expanduser()
-    if not image_path.is_file() or image_path.stat().st_size <= 0:
-        raise ValueError("external save container is missing or empty")
+    if image_path.is_dir():
+        images = sorted(image_path.iterdir(), key=lambda item: item.name)
+        if any(item.is_symlink() or not item.is_file() for item in images):
+            raise ValueError("Choose a folder containing only encrypted save files, without subfolders or links")
+    else:
+        images = [image_path]
+    if not images or any(not image.is_file() or image.stat().st_size <= 0 for image in images):
+        raise ValueError("external save files are missing or empty")
+    if any(image.name.lower() == "manifest.json" for image in images):
+        raise ValueError("Choose only encrypted save files; manifest.json is reserved")
+    if len({image.name.casefold() for image in images}) != len(images):
+        raise ValueError("external save filenames must be unique ignoring case")
     entry_id = 0x10000
     assets = Path(assets).expanduser()
     entry_directory = assets / str(entry_id)
     entry_directory.mkdir(parents=True, exist_ok=True)
-    destination = entry_directory / image_path.name
-    if image_path.resolve() != destination.resolve():
-        shutil.copyfile(image_path, destination)
-    source_path = f"/user/home/{user_id}/savedata_prospero/{title_id}/{image_path.name}"
-    header = bytearray(1304)
-    struct.pack_into("<I", header, 0, 0x35504647)
-    struct.pack_into("<I", header, 4, entry_id)
-    # GFP5 repeats file size in the leading record and stat fields.
-    size = destination.stat().st_size
-    struct.pack_into("<Q", header, 0x20, size)
-    struct.pack_into("<Q", header, 0xF0, size)
-    # S_IFREG | 0600: a regular private save file, not a host OS mode.
-    struct.pack_into("<H", header, 0x110, 0x8180)
-    header[276:276 + len(source_path)] = source_path.encode()
+    items = []
+    for image in images:
+        destination = entry_directory / image.name
+        source_path = f"/user/home/{user_id}/savedata_prospero/{title_id}/{image.name}"
+        encoded_path = source_path.encode()
+        if len(encoded_path) >= 1024:
+            raise ValueError("external save filename is too long")
+        if image.resolve() != destination.resolve():
+            shutil.copyfile(image, destination)
+        header = bytearray(1304)
+        struct.pack_into("<I", header, 0, 0x35504647)
+        struct.pack_into("<I", header, 4, entry_id)
+        size = destination.stat().st_size
+        struct.pack_into("<Q", header, 0x20, size)
+        struct.pack_into("<Q", header, 0xF0, size)
+        struct.pack_into("<H", header, 0x110, 0x8180)
+        header[276:276 + len(encoded_path)] = encoded_path
+        items.append({"path": source_path, "file": image.name, "size": size,
+                      "sha256": "", "header": header.hex()})
     final_header = bytearray(1304)
     struct.pack_into("<I", final_header, 0, 0x35504647)
     struct.pack_into("<I", final_header, 4, entry_id)
     final_header[274] = 1
-    item = {
-        "path": source_path,
-        "file": image_path.name,
-        "size": destination.stat().st_size,
-        "sha256": "",
-        "header": header.hex(),
-    }
     manifest = {
         "entry_id": entry_id,
-        "files": [item],
-        str(entry_id): {"files": [item], "final_header": final_header.hex()},
+        "files": items,
+        str(entry_id): {"files": items, "final_header": final_header.hex()},
     }
     (entry_directory / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return create_metadata(
@@ -337,6 +407,49 @@ def resolve_upload_layout(row, upload_entry, user_id, candidate_rows):
     return title_id, layout
 
 
+def load_selected_manifest(assets, entry_id, source_metadata, user_id):
+    if entry_id is None:
+        return load_manifest(assets, None, expected_user_id=user_id)
+    db = sqlite3.connect(source_metadata)
+    try:
+        row = db.execute(
+            "SELECT path FROM dir_entry_info_tbl WHERE id = ? AND target_type = 3", (entry_id,)
+        ).fetchone()
+    finally:
+        db.close()
+    if row is None:
+        return load_manifest(assets, entry_id, expected_user_id=user_id)
+    identity = optional_save_identity(row[0], is_directory=True)
+    if identity is None:
+        return load_manifest(assets, entry_id, expected_user_id=user_id)
+    assets = Path(assets).expanduser()
+    manifest = json.loads((assets / "manifest.json").read_text())
+    matches = []
+    for local_id, candidate in manifest.items():
+        if not local_id.isdigit():
+            continue
+        files = candidate.get("files", [])
+        if not isinstance(files, list):
+            continue
+        identities = {
+            item_identity
+            for item in files
+            if isinstance(item, dict)
+            and (item_identity := optional_save_identity(item.get("path", ""))) is not None
+        }
+        if identities == {identity}:
+            matches.append(int(local_id))
+
+    def downloaded_at(local_id):
+        path = assets / str(local_id) / "manifest.json"
+        return path.stat().st_mtime_ns if path.is_file() else 0
+
+    if matches:
+        local_id = max(matches, key=lambda value: (downloaded_at(value), value))
+        return load_manifest(assets, local_id, expected_user_id=user_id)
+    return load_manifest(assets, entry_id, expected_user_id=user_id)
+
+
 def create_filtered_metadata(
     output, source_metadata, user_id, user_name, entry_ids, assets, manifest_output=None
 ):
@@ -345,30 +458,45 @@ def create_filtered_metadata(
         entry_ids = [None]
     upload_entries = {}
     for entry_id in entry_ids:
-        actual_id, entry = load_manifest(assets, entry_id, expected_user_id=user_id)
+        actual_id, entry = load_selected_manifest(assets, entry_id, source_metadata, user_id)
+        persist_manifest_entry(assets, actual_id, entry)
         upload_entries[actual_id] = entry
-    entry_ids = sorted(upload_entries)
-
     output = Path(output).expanduser()
     source_metadata = Path(source_metadata).expanduser()
     if output.resolve() == source_metadata.resolve():
         raise ValueError("filtered metadata output must differ from the source database")
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source_metadata, output)
-    placeholders = ",".join("?" for _ in entry_ids)
     db = sqlite3.connect(output)
     try:
-        rows = db.execute(
-            f"SELECT * FROM dir_entry_info_tbl WHERE target_type = 3 AND id IN ({placeholders}) ORDER BY id",
-            entry_ids,
-        ).fetchall()
-        if {row[0] for row in rows} != set(entry_ids):
-            raise ValueError("one or more selected save entries are absent from the source metadata")
         target_user = db.execute(
             "SELECT * FROM user_info_tbl WHERE user_id = ?", (int(user_id, 16),)
         ).fetchone()
         savedata_rows = db.execute("SELECT * FROM users_savedata_tbl").fetchall()
         candidate_rows = db.execute("SELECT * FROM dir_entry_info_tbl WHERE target_type = 3").fetchall()
+        matched_rows = {}
+        for actual_id, entry in upload_entries.items():
+            identities = {save_identity(item["path"]) for item in entry["files"]}
+            if len(identities) != 1:
+                raise ValueError(f"entry {actual_id} contains files from multiple save identities")
+            identity = identities.pop()
+            matches = [
+                row for row in candidate_rows
+                if optional_save_identity(row[1], is_directory=True) == identity
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"{identity[0]} is absent from the current console metadata or has multiple matching entries; "
+                    "browse the console again without deleting the downloaded files"
+                )
+            if matches[0][0] in matched_rows:
+                raise ValueError(f"multiple selected saves map to metadata entry {matches[0][0]}")
+            matched_rows[matches[0][0]] = (actual_id, matches[0])
+        upload_entries = {
+            current_id: remap_upload_entry(upload_entries[actual_id], current_id, actual_id)
+            for current_id, (actual_id, _) in matched_rows.items()
+        }
+        rows = sorted((match for _, match in matched_rows.values()), key=lambda row: row[0])
 
         db.execute("DELETE FROM dir_entry_info_tbl")
         db.execute("DELETE FROM app_info_tbl")
