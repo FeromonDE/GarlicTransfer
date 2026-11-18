@@ -17,6 +17,8 @@ let availableUsers = [];
 let availableEntries = [];
 let requestedDownloadIds = [];
 let pendingUploadOptions = null;
+let pendingUploadEntryIds = null;
+let pendingUploadUserId = null;
 let browserHost = null;
 let pendingBrowserHost = null;
 let dataTransferArmedHost = null;
@@ -289,6 +291,7 @@ controls.confirmImportBtn.addEventListener('click', async () => {
     await window.saveTransfer.importLocalSave(replacement);
     await refreshLocalSaves();
     status(`Replaced ${replacement.filename} and refreshed its upload metadata.`);
+    document.dispatchEvent(new CustomEvent('local-save-replaced', { detail: replacement }));
   } catch (error) {
     status(`Could not replace ${replacement.filename}: ${error.message}`);
   } finally {
@@ -490,6 +493,12 @@ function showUploadConfirmation() {
     option.textContent = `${user.name} (${user.id})`;
     controls.userSelect.appendChild(option);
   }
+  if (pendingUploadUserId) {
+    const owner = pendingUploadUserId.toLowerCase();
+    const matchingUser = availableUsers.find((user) => String(user.id).toLowerCase() === owner);
+    if (matchingUser) controls.userSelect.value = matchingUser.id;
+    pendingUploadUserId = null;
+  }
   controls.uploadSaveSelect.replaceChildren();
   const downloadedEntries = availableEntries.filter((entry) => entry.downloaded);
   for (const entry of downloadedEntries) {
@@ -497,6 +506,12 @@ function showUploadConfirmation() {
     option.value = entry.id;
     option.textContent = `${entry.name || entry.title} (${entry.title}) — ${entry.owner} — entry ${entry.id}`;
     controls.uploadSaveSelect.appendChild(option);
+  }
+  if (pendingUploadEntryIds) {
+    for (const option of controls.uploadSaveSelect.options) {
+      option.selected = pendingUploadEntryIds.includes(Number(option.value));
+    }
+    pendingUploadEntryIds = null;
   }
   if (!availableUsers.length) {
     controls.userSelectLabel.hidden = true;

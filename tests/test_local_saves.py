@@ -83,6 +83,12 @@ class LocalSaveTests(unittest.TestCase):
                 self.assertEqual(item["size"], len(payload))
                 self.assertEqual(item["sha256"], expected_hash)
                 self.assertEqual(struct.unpack_from("<Q", bytes.fromhex(item["header"]), 240)[0], len(payload))
+    def test_empty_inventory_is_not_an_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            assets = Path(folder) / "missing"
+            self.assertEqual(local_inventory(assets), [])
+            self.assertEqual(local_inventory(assets, include_warnings=True), {"entries": [], "warnings": []})
+
     def test_inventory_skips_invalid_manifest_and_reports_warning(self):
         with tempfile.TemporaryDirectory() as folder:
             assets, entry_id = self.make_case(Path(folder))

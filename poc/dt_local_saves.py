@@ -41,8 +41,6 @@ def local_inventory(assets, include_warnings=False):
     for directory in assets.iterdir() if assets.is_dir() else []:
         if directory.name.isdigit() and (directory / "manifest.json").is_file():
             entry_ids.add(int(directory.name))
-    if not entry_ids:
-        raise ValueError(f"no downloaded saves were found under {assets}")
     entries = []
     for entry_id in sorted(entry_ids):
         try:
