@@ -153,6 +153,15 @@
             <select id="uploadSaveSelect" multiple size="6"></select>
           </label>
           <button id="confirmUploadBtn" class="btn-primary" hidden type="button">Upload</button>
+          <div id="externalUploadControls" class="operation-form" hidden>
+            <div class="button-row">
+              <button id="addExternalSaveBtn" class="secondary" type="button">Add external save…</button>
+              <button id="addExternalFolderBtn" class="secondary" type="button">Add save folder…</button>
+            </div>
+            <label>Game title ID (for external save)
+              <input id="externalTitleId" placeholder="PPSA12345" maxlength="9">
+            </label>
+          </div>
         </section>
       </section>
 
@@ -309,6 +318,7 @@
         <details class="card">
           <summary class="card-toggle">Advanced connection settings</summary>
           <div class="settings-grid adv-grid">
+            <label>Upload display name<input id="uploadDisplayName" value="GarlicTransfer" maxlength="32" spellcheck="false"></label>
             <label>PC IPv6 interface<input id="interface" value="wlp4s0" spellcheck="false"></label>
             <label>Client hardware ID (0 = auto)<input id="hardware" value="0" inputmode="numeric"></label>
             <label>Source command port<input id="sourcePort" value="1004" inputmode="numeric"></label>
