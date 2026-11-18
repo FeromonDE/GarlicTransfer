@@ -80,14 +80,32 @@ This is an HTOS worker key, not a Forgejo token or a PSN credential. You do not 
 The profile root defaults to `dt_downloads`. Downloads are separated as:
 
 ```text
-dt_downloads/
-  <console-host-id>/
+dt_downloads/<console-host-id>/
+  Saves/<user-id>/<PPSA-or-CUSA-title-id>/<encrypted-save-files>
+  Transfer-Metadata/
     metadata.db
     manifest.json
-    <save-entry-id>/
-      manifest.json
-      <save containers>
+    <entry-id>/manifest.json
+    generated-metadata.db
+    generated-upload-manifest.json
+    dt-source.log
+  Other Needed Data/
+    <entry-id>/<non-save-files>
+    Backups/<entry-id>/<editor-backups>
+    external-save-<timestamp>/<upload-staging>
 ```
+
+Save folders contain payloads only. New download manifests are stored separately
+under `Transfer-Metadata`. Existing numeric entry folders are still supported
+and are not automatically moved. My Saves, Import/Export, the save editor,
+uploads, and FTP resolve both layouts. Nested console save directories are
+preserved.
+
+Folder lookup is shared by the renderer/main-process helpers and the Python
+layout helper. Manifest lookup prefers the organized index and entry, then
+the legacy index and entry. Missing index entries fall back to individual
+manifests. New downloads always write to the organized layout. Folder-related
+functions include short purpose notes.
 
 ## Download saves
 
@@ -103,7 +121,7 @@ The account ID is used to construct the local Data Transfer approval request. It
 
 If the PS5 rejects a stored pairing with result `0x11`, it may belong to a different PSN user. Pair this PS5 again on Windows or enter the correct decimal account ID.
 
-Downloaded entry folders contain the save containers and a manifest with paths, sizes, SHA-256 hashes, and GFP5 headers.
+Downloaded save folders contain the encrypted containers. Separate manifests under Transfer-Metadata record paths, sizes, SHA-256 hashes, and GFP5 headers.
 
 ## Upload saves
 

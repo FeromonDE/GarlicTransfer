@@ -1,3 +1,5 @@
+const { resolveMetadata } = require('./download_layout.cjs');
+const { metadataPath, otherDataPath } = require('./folder_paths.js');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -108,7 +110,7 @@ function startDownload(options) {
     paired = existingPairingPrefix(app.getPath('userData'), options);
     if (paired) options.approvalPrefixPath = paired;
   }
-  const metadataPath = options.metadata || path.join(options.output || 'dt_downloads', 'metadata.db');
+  const metadataPath = resolveMetadata(options.metadata, options.output || 'dt_downloads');
   if (!String(options.accountId || '').trim() && !paired && !fs.existsSync(metadataPath)) {
     startPairing(options);
     return;
@@ -284,7 +286,9 @@ function getUsers(metadataPath) {
   });
 }
 
+// Read upload inventory.
 function getInventory(metadataPath) {
+  metadataPath = resolveMetadata(metadataPath, path.dirname(metadataPath));
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ['-m', 'poc.dt_backend', 'inventory', metadataPath], { cwd: workDir, env: { ...process.env, PYTHONPATH: resourceRoot } });
     let buffer = '';
@@ -331,12 +335,14 @@ function runLocalSaveOperation(command, args) {
   });
 }
 
+// Build upload metadata.
 function createMetadata(options) {
+  options.metadata = resolveMetadata(options.metadata, options.output);
   return new Promise((resolve, reject) => {
-    fs.mkdirSync(options.output, { recursive: true });
-    const generatedMetadata = path.join(options.output, 'generated-metadata.db');
-    const generatedManifest = path.join(options.output, 'generated-upload-manifest.json');
-    if (options.uploadKind === 'external') options.assets = path.join(options.output, `external-save-${Date.now()}`);
+    fs.mkdirSync(metadataPath(options.output), { recursive: true });
+    const generatedMetadata = metadataPath(options.output, 'generated-metadata.db');
+    const generatedManifest = metadataPath(options.output, 'generated-upload-manifest.json');
+    if (options.uploadKind === 'external') options.assets = otherDataPath(options.output, `external-save-${Date.now()}`);
     const args = [
       '-m', 'poc.dt_metadata',
       '--output', generatedMetadata,
@@ -345,7 +351,7 @@ function createMetadata(options) {
       '--user-name', options.userName || 'user',
       '--manifest-output', generatedManifest,
     ];
-    const sourceMetadata = options.metadata || path.join(options.output, 'metadata.db');
+    const sourceMetadata = resolveMetadata(options.metadata, options.output);
     if (options.uploadKind === 'external') {
       args.push('--external-image', options.externalImage, '--title-id', options.titleId || '', '--source', sourceMetadata);
     } else if (options.uploadKind === 'other') {
@@ -383,7 +389,7 @@ function startUpload(options) {
       DT_ASSETS: path.resolve(options.assets),
       DT_MANIFEST: path.resolve(options.uploadManifest),
       DT_UPLOAD_KIND: options.uploadKind || 'save',
-      DT_LOG: path.join(path.resolve(options.output), 'dt-source.log'),
+      DT_LOG: metadataPath(path.resolve(options.output), 'dt-source.log'),
       DT_PAIRING_PREFIX: prefixPath,
       DT_EXPECTED_HOST_ID: String(options.hostId),
       DT_EXIT_ON_EOF: '1',

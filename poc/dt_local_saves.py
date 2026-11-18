@@ -5,10 +5,12 @@ import os
 import shutil
 from pathlib import Path
 
-from poc.dt_metadata import infer_title_id, load_manifest
+from poc.dt_layout import PROFILE_FOLDERS, profile_root, metadata_file, manifest_ids, existing_payload
+from poc.dt_metadata import infer_title_id, load_manifest, persist_manifest_entry
 
 
 def public_entry(entry_id, entry):
+    """Build public save details."""
     files = [
         {
             "file": item["file"],
@@ -28,19 +30,10 @@ def public_entry(entry_id, entry):
 
 
 def local_inventory(assets, include_warnings=False):
-    assets = Path(assets).expanduser()
+    """List downloaded saves."""
+    assets = profile_root(Path(assets).expanduser())
     warnings = []
-    root_manifest = assets / "manifest.json"
-    entry_ids = set()
-    if root_manifest.is_file():
-        try:
-            document = json.loads(root_manifest.read_text())
-            entry_ids.update(int(key) for key in document if key.isdigit())
-        except (OSError, ValueError, TypeError) as exc:
-            warnings.append(f"root manifest: {exc}")
-    for directory in assets.iterdir() if assets.is_dir() else []:
-        if directory.name.isdigit() and (directory / "manifest.json").is_file():
-            entry_ids.add(int(directory.name))
+    entry_ids = manifest_ids(assets, warnings)
     entries = []
     for entry_id in sorted(entry_ids):
         try:
@@ -54,6 +47,7 @@ def local_inventory(assets, include_warnings=False):
 
 
 def local_profiles(root):
+    """List console profiles."""
     root = Path(root).expanduser()
     try:
         names = json.loads((root / "console-names.json").read_text())
@@ -62,11 +56,13 @@ def local_profiles(root):
     candidates = [root] + [path for path in root.iterdir() if path.is_dir()] if root.is_dir() else []
     profiles = []
     for assets in candidates:
-        if not (assets / "manifest.json").is_file() and not (assets / "metadata.db").is_file():
+        if assets.name in PROFILE_FOLDERS:
+            continue
+        if not manifest_ids(assets) and not metadata_file(assets).is_file():
             continue
         inventory = local_inventory(assets, include_warnings=True)
         entries = inventory["entries"]
-        if not entries and not (assets / "metadata.db").is_file():
+        if not entries and not metadata_file(assets).is_file():
             continue
         profiles.append({
             "id": assets.name,
@@ -80,19 +76,19 @@ def local_profiles(root):
 
 
 def selected_file(assets, entry_id, filename):
+    """Find selected payload."""
     actual_id, entry = load_manifest(assets, entry_id)
     for item in entry["files"]:
         if item["file"] == filename:
-            path = next(
-                candidate
-                for candidate in (assets / str(entry_id) / filename, assets / filename)
-                if candidate.is_file()
-            )
+            path = existing_payload(assets, entry_id, item)
+            if path is None:
+                raise ValueError(f"save file {filename} is missing")
             return actual_id, entry, item, path
     raise ValueError(f"save file {filename} is not present in entry {entry_id}")
 
 
 def export_save(assets, entry_id, filename, destination):
+    """Copy selected save."""
     _, _, _, source = selected_file(Path(assets).expanduser(), entry_id, filename)
     destination = Path(destination).expanduser()
     if not destination.is_dir():
@@ -104,27 +100,10 @@ def export_save(assets, entry_id, filename, destination):
     return target
 
 
-def replace_manifest(assets, entry_id, entry):
-    assets = Path(assets).expanduser()
-    root_path = assets / "manifest.json"
-    entry_path = assets / str(entry_id) / "manifest.json"
-    if root_path.is_file():
-        document = json.loads(root_path.read_text())
-        document[str(entry_id)] = entry
-        temporary = root_path.with_name(root_path.name + ".import.tmp")
-        temporary.write_text(json.dumps(document, indent=2) + "\n")
-        os.replace(temporary, root_path)
-    document = json.loads(entry_path.read_text()) if entry_path.is_file() else {}
-    document["entry_id"] = entry_id
-    document["files"] = entry["files"]
-    document[str(entry_id)] = entry
-    temporary = entry_path.with_name(entry_path.name + ".import.tmp")
-    temporary.write_text(json.dumps(document, indent=2) + "\n")
-    os.replace(temporary, entry_path)
-
 
 def import_save(assets, entry_id, filename, source):
-    assets = Path(assets).expanduser()
+    """Replace selected save."""
+    assets = profile_root(Path(assets).expanduser())
     _, _, _, target = selected_file(assets, entry_id, filename)
     source = Path(source).expanduser()
     if not source.is_file() or source.stat().st_size <= 0:
@@ -138,7 +117,7 @@ def import_save(assets, entry_id, filename, source):
             os.fsync(stream.fileno())
         os.replace(temporary, target)
         actual_id, entry = load_manifest(assets, entry_id)
-        replace_manifest(assets, actual_id, entry)
+        persist_manifest_entry(assets, actual_id, entry)
         return public_entry(actual_id, entry)
     finally:
         if temporary.exists():

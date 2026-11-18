@@ -1,3 +1,4 @@
+const folderPaths = window.transferFolders;
 const byId = (id) => document.getElementById(id);
 const controls = {};
 for (const id of [
@@ -61,9 +62,9 @@ function formatFirmware(value) {
   return /^\d{8}$/.test(text) ? `${Number(text.slice(0, 2))}.${text.slice(2, 4)}` : text;
 }
 
+// Build profile path.
 function profilePath(root, child) {
-  const separator = root.includes('\\') ? '\\' : '/';
-  return `${root.replace(/[\\/]+$/, '')}${separator}${child}`;
+  return folderPaths.joinProfilePath(root, child);
 }
 
 function updateSidebarConsole() {
@@ -543,6 +544,7 @@ function showUploadConfirmation() {
   status('Select downloaded entries, or add an external encrypted save.');
 }
 
+// Prepare upload selection.
 async function startUpload() {
   const current = options();
   if (!current.clientHost) {
@@ -558,7 +560,7 @@ async function startUpload() {
   current.entryIds = [];
   pendingUploadOptions = current;
   const hasExplicitMetadata = Boolean(current.metadata);
-  const previousMetadata = current.metadata || `${current.output}/metadata.db`;
+  const previousMetadata = current.metadata || folderPaths.metadataPath(current.output, 'metadata.db');
   try {
     const inventory = await window.saveTransfer.inventory(previousMetadata);
     availableUsers = inventory.users;
@@ -795,10 +797,9 @@ for (const name of ['output', 'metadata', 'assets']) {
       profileRoot = path;
       applyConsoleProfile();
     }
-    if (name === 'metadata' && !controls.assets.value) controls.assets.value = path.replace(/[/\\][^/\\]+$/, '');
+    if (name === 'metadata' && !controls.assets.value) controls.assets.value = folderPaths.profileRootPath(path.replace(/[/\\][^/\\]+$/, ''));
     if (name === 'assets' && !controls.metadata.value) {
-      const parent = path.replace(/[/\\][^/\\]+$/, '');
-      controls.metadata.value = `${parent}${parent.includes('\\') ? '\\' : '/'}metadata.db`;
+      controls.metadata.value = folderPaths.metadataPath(path, 'metadata.db');
     }
   });
 }
@@ -847,13 +848,13 @@ window.saveTransfer.onEvent((event) => {
     dataTransferArmedHost = browserHost;
     activeTransfer = null;
     availableUsers = event.users || availableUsers;
-    controls.metadata.value = `${options().output}/metadata.db`;
+    controls.metadata.value = folderPaths.metadataPath(options().output, 'metadata.db');
     status(event.message);
     busy(false);
   }
   if (event.type === 'downloaded') {
     for (const id of event.entryIds || requestedDownloadIds) downloadedEntryIds.add(id);
-    controls.metadata.value = `${options().output}/metadata.db`;
+    controls.metadata.value = folderPaths.metadataPath(options().output, 'metadata.db');
     status(event.message);
     controls.powerBtn.hidden = true;
   }
@@ -863,7 +864,7 @@ window.saveTransfer.onEvent((event) => {
     dataTransferArmedHost = event.consoleDisconnected ? null : browserHost;
     activeTransfer = null;
     availableUsers = event.users || [];
-    controls.metadata.value = `${options().output}/metadata.db`;
+    controls.metadata.value = folderPaths.metadataPath(options().output, 'metadata.db');
     if (mode === 'upload-metadata') {
       pendingUploadOptions.metadata = controls.metadata.value;
       showUploadConfirmation();
@@ -883,7 +884,7 @@ window.saveTransfer.onEvent((event) => {
     if (mode === 'download') {
       dataTransferArmedHost = browserHost;
       for (const id of event.entryIds || requestedDownloadIds) downloadedEntryIds.add(id);
-      controls.metadata.value = `${options().output}/metadata.db`;
+      controls.metadata.value = folderPaths.metadataPath(options().output, 'metadata.db');
       renderEntries();
     }
     status(event.message);

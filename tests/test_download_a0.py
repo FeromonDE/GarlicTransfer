@@ -28,7 +28,7 @@ class DownloadMetadataTests(unittest.TestCase):
         channel = FakeChannel([0x23] * 20 + [0])
         with tempfile.TemporaryDirectory() as directory, patch("poc.dt_download.time.sleep") as sleep:
             download_metadata(channel, Path(directory))
-            self.assertEqual((Path(directory) / "metadata.db").read_bytes(), b"metadata")
+            self.assertEqual((Path(directory) / "Transfer-Metadata" / "metadata.db").read_bytes(), b"metadata")
         self.assertEqual(channel.commands, [0xA0, 0xB2])
         self.assertEqual(sleep.call_count, 20)
         sleep.assert_called_with(0.25)

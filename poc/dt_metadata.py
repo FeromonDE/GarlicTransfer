@@ -12,6 +12,8 @@ import uuid
 from pathlib import Path
 
 
+from poc.dt_layout import profile_root, root_manifest, entry_manifest, manifest_ids, read_manifest_entry, existing_payload
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TEMPLATE = PROJECT_ROOT / "poc" / "templates" / "single-save.db"
 
@@ -59,36 +61,18 @@ def validate_payload(path, entry_id, item):
 
 
 def load_manifest(assets, entry_id=None, expected_user_id=None):
-    assets = Path(assets).expanduser()
-    manifest_path = assets / "manifest.json"
-    if not manifest_path.is_file() and entry_id is not None:
-        manifest_path = assets / str(entry_id) / "manifest.json"
-    if not manifest_path.is_file():
-        raise ValueError(f"save manifest not found under {assets}")
-    manifest = json.loads(manifest_path.read_text())
-    if not manifest:
-        raise ValueError("no downloaded saves were found; download save data before uploading")
-    if entry_id is None:
-        entry_id = manifest.get("entry_id")
-        if entry_id is None:
-            numeric_keys = [key for key in manifest if key.isdigit()]
-            if len(numeric_keys) != 1:
-                raise ValueError("select the save entries to upload; the manifest contains multiple saves")
-            entry_id = int(numeric_keys[0])
-    entry_id = int(entry_id)
-    entry = manifest.get(str(entry_id), {})
-    files = entry.get("files", manifest.get("files", []))
+    """Load and validate save entry."""
+    assets = profile_root(assets)
+    entry_id, entry = read_manifest_entry(assets, entry_id)
+    files = entry["files"]
     final_header = entry.get("final_header")
-    if not files:
-        raise ValueError(f"save manifest for entry {entry_id} contains no files")
     if not final_header:
         raise ValueError(f"entry {entry_id} lacks a GFP5 final header; redownload it with this version")
     for item in files:
         name = Path(item.get("file", "")).name
         if not name or name != item.get("file"):
             raise ValueError(f"entry {entry_id} has an invalid save filename")
-        candidates = (assets / str(entry_id) / name, assets / name)
-        path = next((candidate for candidate in candidates if candidate.is_file()), None)
+        path = existing_payload(assets, entry_id, item)
         if path is None:
             raise ValueError(f"save file for entry {entry_id} is missing: {name}")
         if not item.get("header"):
@@ -109,20 +93,23 @@ def write_upload_manifest(output, entries):
 
 
 def write_json_replace(path, document):
+    """Replace JSON file."""
     path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".upload.tmp")
     temporary.write_text(json.dumps(document, indent=2) + "\n")
     os.replace(temporary, path)
 
 
 def persist_manifest_entry(assets, entry_id, entry):
+    """Refresh save manifests."""
     assets = Path(assets).expanduser()
-    root_path = assets / "manifest.json"
+    root_path = root_manifest(assets)
     document = json.loads(root_path.read_text()) if root_path.is_file() else {}
     document[str(entry_id)] = entry
     write_json_replace(root_path, document)
 
-    entry_path = assets / str(entry_id) / "manifest.json"
+    entry_path = entry_manifest(assets, entry_id)
     document = json.loads(entry_path.read_text()) if entry_path.is_file() else {}
     document["entry_id"] = entry_id
     document["files"] = entry["files"]
@@ -258,6 +245,7 @@ def find_downloaded_user(source_metadata, user_id):
 
 
 def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user", manifest_output=None, source_metadata=None):
+    """Build save catalogue."""
     user_id = validate_user(user_id, user_name)
     target_user = find_downloaded_user(source_metadata, user_id)
     entry_id, upload_entry = load_manifest(assets, entry_id, expected_user_id=user_id)
@@ -315,6 +303,7 @@ def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user
 
 
 def create_external_save(output, user_id, title_id, image_path, assets, user_name="user", manifest_output=None, source_metadata=None):
+    """Build external-save upload."""
     user_id = validate_user(user_id, user_name)
     title_id = title_id.upper()
     if not re.fullmatch(r"[A-Z0-9]{9}", title_id):
@@ -408,6 +397,7 @@ def resolve_upload_layout(row, upload_entry, user_id, candidate_rows):
 
 
 def load_selected_manifest(assets, entry_id, source_metadata, user_id):
+    """Match save to console entry."""
     if entry_id is None:
         return load_manifest(assets, None, expected_user_id=user_id)
     db = sqlite3.connect(source_metadata)
@@ -423,10 +413,11 @@ def load_selected_manifest(assets, entry_id, source_metadata, user_id):
     if identity is None:
         return load_manifest(assets, entry_id, expected_user_id=user_id)
     assets = Path(assets).expanduser()
-    manifest = json.loads((assets / "manifest.json").read_text())
     matches = []
-    for local_id, candidate in manifest.items():
-        if not local_id.isdigit():
+    for local_id in manifest_ids(assets):
+        try:
+            _, candidate = read_manifest_entry(assets, local_id)
+        except (OSError, ValueError, KeyError, TypeError):
             continue
         files = candidate.get("files", [])
         if not isinstance(files, list):
@@ -441,7 +432,7 @@ def load_selected_manifest(assets, entry_id, source_metadata, user_id):
             matches.append(int(local_id))
 
     def downloaded_at(local_id):
-        path = assets / str(local_id) / "manifest.json"
+        path = entry_manifest(assets, local_id)
         return path.stat().st_mtime_ns if path.is_file() else 0
 
     if matches:
@@ -453,6 +444,7 @@ def load_selected_manifest(assets, entry_id, source_metadata, user_id):
 def create_filtered_metadata(
     output, source_metadata, user_id, user_name, entry_ids, assets, manifest_output=None
 ):
+    """Build selected upload catalogue."""
     user_id = validate_user(user_id, user_name)
     if not entry_ids:
         entry_ids = [None]

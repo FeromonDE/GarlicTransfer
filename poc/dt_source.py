@@ -9,6 +9,7 @@ import struct
 import sys
 import threading
 from pathlib import Path
+from poc.dt_layout import root_manifest, existing_payload
 
 from poc.dt_metadata import sync_other_metadata, sync_upload_metadata, validate_payload
 from poc.dt_pair import save_prefix
@@ -235,18 +236,18 @@ def recv_body(sock, key, nonce_prefix, sequence, size):
 
 
 def send_save_chunks(sock, key, nonce, sequence, file_type, file_id):
+    """Stream selected save files."""
     root = Path(os.environ.get("DT_ASSETS", "poc/dt-crypto/extracted"))
-    manifest_path = Path(os.environ.get("DT_MANIFEST", str(root / "manifest.json")))
+    manifest_path = Path(os.environ.get("DT_MANIFEST", str(root_manifest(root))))
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {}
     save = manifest.get(str(file_id), {})
     source_id = int(save.get("source_id", file_id))
     entries = save.get("files", []) if file_type in (2, 3) else []
     assets = []
     for entry in entries:
-        candidates = (root / str(source_id) / entry["file"], root / entry["file"])
-        path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+        path = existing_payload(root, source_id, entry)
         assets.append((entry, path))
-    if assets and all(path.is_file() for _, path in assets):
+    if assets and all(path is not None for _, path in assets):
         for entry, path in assets:
             validate_payload(path, file_id, entry)
         if os.environ.get("DT_UPLOAD_KIND") == "other":

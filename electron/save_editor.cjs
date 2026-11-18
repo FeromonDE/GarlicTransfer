@@ -1,3 +1,5 @@
+const { localSaveFile } = require('./download_layout.cjs');
+const { otherDataPath } = require('./folder_paths.js');
 const fs = require('node:fs');
 const fsPromises = require('node:fs/promises');
 const path = require('node:path');
@@ -294,6 +296,7 @@ async function runSaveJob(options) {
   }
 }
 
+// Register save-editor actions.
 function registerSaveEditor({ ipcMain, app, dialog, shell, python, resourceRoot, workDir }) {
   const userDataRoot = app.getPath('userData');
   ipcMain.handle('save-editor:choose-input', async () => {
@@ -315,9 +318,7 @@ function registerSaveEditor({ ipcMain, app, dialog, shell, python, resourceRoot,
     return result.canceled ? null : result.filePath;
   });
   ipcMain.handle('save-editor:local-file', async (_event, { assets, entryId, filename }) => {
-    const candidates = [path.join(assets, String(entryId), filename), path.join(assets, filename)];
-    const selected = candidates.find((candidate) => fs.existsSync(candidate));
-    if (!selected) throw new Error('the downloaded save file no longer exists');
+    const selected = localSaveFile(assets, entryId, filename);
     const paths = [selected];
     if (fs.existsSync(`${selected}.bin`)) paths.push(`${selected}.bin`);
     return paths;
@@ -356,10 +357,10 @@ function registerSaveEditor({ ipcMain, app, dialog, shell, python, resourceRoot,
   });
   ipcMain.handle('save-editor:show', (_event, selected) => shell.showItemInFolder(selected));
   ipcMain.handle('save-editor:backup-local', async (_event, { assets, entryId, filename }) => {
-    const selected = [path.join(assets, String(entryId), filename), path.join(assets, filename)]
-      .find((candidate) => fs.existsSync(candidate));
-    if (!selected) throw new Error('the downloaded save file no longer exists');
-    const backup = `${selected}.backup-${Date.now()}`;
+    const selected = localSaveFile(assets, entryId, filename);
+    const backupDirectory = otherDataPath(assets, 'Backups', String(entryId));
+    await fsPromises.mkdir(backupDirectory, { recursive: true });
+    const backup = path.join(backupDirectory, `${filename}.backup-${Date.now()}`);
     await fsPromises.copyFile(selected, backup);
     return backup;
   });
