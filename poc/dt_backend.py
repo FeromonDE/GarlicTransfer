@@ -9,6 +9,7 @@ import sys
 from contextlib import closing
 from pathlib import Path
 
+from poc.dt_layout import metadata_file, profile_root, manifest_paths, root_manifest, existing_payload
 from poc.dt_download import DtChannel, discovery_versions, download_entry, download_metadata, launch_console
 from poc.dt_metadata import optional_save_identity
 from poc.dt_ppr_power import CAPTURED_BODY
@@ -130,9 +131,10 @@ def disconnect_console(command):
 
 
 def index_downloaded_manifests(output):
+    """Build downloaded-save index."""
     combined = {}
     downloaded = set()
-    for manifest_path in output.glob("*/manifest.json"):
+    for manifest_path in manifest_paths(output):
         if not manifest_path.parent.name.isdigit():
             continue
         try:
@@ -143,7 +145,7 @@ def index_downloaded_manifests(output):
             final_header = entry.get("final_header")
             if not files or not final_header:
                 continue
-            if not all(item.get("header") and (manifest_path.parent / item["file"]).is_file()
+            if not all(item.get("header") and existing_payload(output, entry_id, item) is not None
                        for item in files):
                 continue
             combined[str(entry_id)] = {"files": files, "final_header": final_header}
@@ -152,7 +154,9 @@ def index_downloaded_manifests(output):
                 downloaded.add(identity)
         except (OSError, ValueError, KeyError, TypeError):
             continue
-    (output / "manifest.json").write_text(json.dumps(combined, indent=2) + "\n")
+    combined_path = root_manifest(output, for_write=True)
+    combined_path.parent.mkdir(parents=True, exist_ok=True)
+    combined_path.write_text(json.dumps(combined, indent=2) + "\n")
     return downloaded
 
 
@@ -191,7 +195,7 @@ def download(options):
             # exist." when it matches nobody.  So compute it for every firmware, not
             # only 14.22 - otherwise every other console silently falls back to the
             # captured template's account and is rejected with 0x11.
-            prefix = power_request_prefix(options.get("accountId"), output / "metadata.db",
+            prefix = power_request_prefix(options.get("accountId"), metadata_file(output),
                                           options.get("approvalPrefixPath"))
             host_id_hex = discovery_host_id(response)
             if prefix is None and (host_id_hex or "").upper() != LEGACY_BODY_HOST_ID:
@@ -246,7 +250,7 @@ def download(options):
         emit("status", step=3, message="Downloading save metadata.")
         data = DtChannel(host, 1005, oracle_host, oracle_port, version=protocol_version)
         download_metadata(data, output)
-        db = sqlite3.connect(output / "metadata.db")
+        db = sqlite3.connect(metadata_file(output))
         rows = db.execute(
             "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
         ).fetchall()
@@ -363,6 +367,7 @@ def list_users(path):
 
 
 def list_inventory(path):
+    """Read upload inventory."""
     metadata_path = Path(path).expanduser().resolve()
     if not metadata_path.is_file() or metadata_path.stat().st_size == 0:
         raise ValueError(f"Metadata missing or empty: {metadata_path}. Browse console saves again.")
@@ -384,7 +389,7 @@ def list_inventory(path):
         )
     ]
     db.close()
-    downloaded_ids = index_downloaded_manifests(Path(path).parent)
+    downloaded_ids = index_downloaded_manifests(profile_root(Path(path).parent))
     entries = []
     for entry_id, save_path, size, target_type in rows:
         parts = save_path.strip("/").split("/")

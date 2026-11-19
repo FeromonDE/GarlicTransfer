@@ -47,10 +47,10 @@ class AppDownloadTests(unittest.TestCase):
              patch("poc.dt_download.recv_record", side_effect=records):
             output = Path(folder)
             download_entry(FakeChannel(), 296, output, package_only=True)
-            package = output / "296" / "app.pkg"
+            package = output / "Other Needed Data" / "296" / "app.pkg"
             self.assertEqual(package.read_bytes(), payload)
-            self.assertFalse((output / "296" / "app.json").exists())
-            manifest = json.loads((output / "296" / "manifest.json").read_text())
+            self.assertFalse((output / "Other Needed Data" / "296" / "app.json").exists())
+            manifest = json.loads((output / "Transfer-Metadata" / "296" / "manifest.json").read_text())
             self.assertEqual(manifest["296"]["files"][0]["size"], len(payload))
             self.assertEqual(len(manifest["296"]["files"]), 1)
 

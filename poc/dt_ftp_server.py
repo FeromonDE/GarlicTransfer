@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
+from poc.dt_layout import entry_manifest, cached_directory, metadata_file
 from poc.dt_backend import (
     build_power_request_body,
     discovery_host_id,
@@ -126,18 +127,20 @@ class Catalog:
             self.entries[(category, name)] = Entry(entry_id, category, name, source_path, size)
 
     def entry_directory(self, entry):
-        return self.output / str(entry.id)
+        """Find cached payload folder."""
+        return cached_directory(self.output, entry.id, entry.source_path)
 
     def ensure_entry(self, entry):
+        """Load cached or download entry."""
         directory = self.entry_directory(entry)
-        if (directory / "manifest.json").is_file():
+        if entry_manifest(self.output, entry.id).is_file():
             return directory
         if self.backend is None:
             raise FileNotFoundError(f"entry {entry.id} is not cached")
         with self.download_lock:
-            if not (directory / "manifest.json").is_file():
+            if not entry_manifest(self.output, entry.id).is_file():
                 self.backend.download(entry)
-        return directory
+        return self.entry_directory(entry)
 
     def list_directory(self, path):
         parts = normalize(path)
@@ -367,7 +370,7 @@ def main():
     parser.add_argument("--no-power", action="store_true")
     parser.add_argument("--offline", action="store_true", help="serve cached files only")
     args = parser.parse_args()
-    metadata = args.metadata or args.output / "metadata.db"
+    metadata = args.metadata or metadata_file(args.output)
     backend = None
     try:
         if not args.offline:

