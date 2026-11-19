@@ -558,6 +558,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 #myTitleList tbody tr:hover, #myTitleSaveList tbody tr:hover { background: rgba(255,255,255,.04); }
 .dropdown { position: relative; }
 .dropdown-content { position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; min-width: 190px; padding: 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: 0 12px 28px rgba(0,0,0,.4); }
+.editor-actions .dropdown-content { top: auto; bottom: calc(100% + 5px); }
 .dropdown-content button { display: block; width: 100%; border: 0; background: transparent; text-align: left; }
 .dropdown-content button:hover { background: rgba(255,255,255,.06); }
 .danger { background: var(--danger); }
