@@ -119,7 +119,83 @@ function selectMyTitle(title) {
   myStatus(`${group.name}: ${group.saves.length} save file(s). Select one to continue.`);
 }
 
+let saveContextMenu = null;
+
+function closeSaveContextMenu() {
+  if (saveContextMenu) saveContextMenu.remove();
+  saveContextMenu = null;
+}
+
+document.addEventListener('pointerdown', (event) => {
+  if (saveContextMenu && !saveContextMenu.contains(event.target)) closeSaveContextMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeSaveContextMenu();
+});
+window.addEventListener('blur', closeSaveContextMenu);
+
+function openSaveContextMenu(event, actions) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeSaveContextMenu();
+  if (mySaveOperation || activeTransfer || browseSessionActive) return;
+  saveContextMenu = document.createElement('div');
+  saveContextMenu.className = 'save-context-menu';
+  saveContextMenu.setAttribute('role', 'menu');
+  for (const action of actions) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = action.label;
+    button.setAttribute('role', 'menuitem');
+    button.addEventListener('click', () => {
+      closeSaveContextMenu();
+      action.run();
+    });
+    saveContextMenu.appendChild(button);
+  }
+  document.body.appendChild(saveContextMenu);
+  const bounds = saveContextMenu.getBoundingClientRect();
+  saveContextMenu.style.left = `${Math.max(8, Math.min(event.clientX || 8, window.innerWidth - bounds.width - 8))}px`;
+  saveContextMenu.style.top = `${Math.max(8, Math.min(event.clientY || 8, window.innerHeight - bounds.height - 8))}px`;
+  saveContextMenu.querySelector('button')?.focus();
+}
+
+function attachSaveContextMenu(row, actions, select) {
+  row.tabIndex = 0;
+  row.addEventListener('contextmenu', (event) => openSaveContextMenu(event, actions));
+  row.addEventListener('keydown', (event) => {
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      const bounds = row.getBoundingClientRect();
+      openSaveContextMenu(event, { clientX: bounds.left + 20, clientY: bounds.bottom });
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      select();
+    }
+  });
+}
+
+function localSaveActions(save) {
+  const action = (label, control) => ({
+    label,
+    run: () => {
+      if (mySaveOperation || activeTransfer || browseSessionActive) return;
+      selectMySave(save);
+      if (control) myControls[control].click();
+    },
+  });
+  return [
+    action('Select save'),
+    action('Decrypt & edit', 'mySaveDecryptBtn'),
+    action('Upload to PS5', 'uploadSaveBtn'),
+    action('Decrypt and export', 'decryptExportBtn'),
+    action('Export original', 'mySaveExportBtn'),
+    action('Import replacement…', 'mySaveImportBtn'),
+    action('Resign', 'mySaveResignBtn'),
+  ];
+}
+
 function renderMySaves() {
+  closeSaveContextMenu();
   const groups = myTitleGroups();
   const selectedGroup = selectedTitle ? groups.get(selectedTitle) : null;
   if (selectedTitle && !selectedGroup) selectedTitle = null;
@@ -151,6 +227,7 @@ function renderMySaves() {
       actions.appendChild(open);
       row.append(title, count, size, actions);
       row.addEventListener('click', () => selectMyTitle(group.key));
+      attachSaveContextMenu(row, [{ label: 'View saves', run: () => selectMyTitle(group.key) }], () => selectMyTitle(group.key));
       myControls.myTitleEntries.appendChild(row);
     }
     return;
@@ -175,6 +252,7 @@ function renderMySaves() {
     actions.appendChild(select);
     row.append(file, size, actions);
     row.addEventListener('click', () => selectMySave(save));
+    attachSaveContextMenu(row, localSaveActions(save), () => selectMySave(save));
     myControls.mySaveEntries.appendChild(row);
   }
 }

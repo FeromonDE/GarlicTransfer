@@ -38,3 +38,16 @@ test('external save upload is not exposed', () => {
   assert.doesNotMatch(html, /External save \(not in the console library\)/);
   assert.doesNotMatch(renderer, /controls\.uploadExternalBtn/);
 });
+
+test('local save rows expose the full context menu by mouse and keyboard', () => {
+  const saves = fs.readFileSync(path.join(root, 'electron', 'my_saves.js'), 'utf8');
+  const styles = fs.readFileSync(path.join(root, 'electron', 'style.css'), 'utf8');
+  assert.match(saves, /attachSaveContextMenu\(row, localSaveActions\(save\)/);
+  assert.match(saves, /attachSaveContextMenu\(row, \[\{ label: 'View saves'/);
+  for (const action of ['Select save', 'Decrypt & edit', 'Upload to PS5', 'Decrypt and export', 'Export original', 'Import replacement…', 'Resign']) {
+    assert.ok(saves.includes(`action('${action}'`), `missing context action: ${action}`);
+  }
+  assert.match(saves, /event\.key === 'ContextMenu'/);
+  assert.match(saves, /event\.shiftKey && event\.key === 'F10'/);
+  assert.match(styles, /\.save-context-menu/);
+});

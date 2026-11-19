@@ -581,3 +581,8 @@ tr:hover td { background: rgba(255,255,255,.02); }
   .workspace-grid { grid-template-columns: 1fr; }
   .workspace-files { max-height: 240px; border-right: 0; border-bottom: 1px solid var(--border); }
 }
+
+.save-context-menu { position: fixed; z-index: 4000; min-width: 200px; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+.save-context-menu button { display: block; width: 100%; padding: 9px 12px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
+.save-context-menu button:hover, .save-context-menu button:focus-visible { background: rgba(45,125,210,.18); outline: 1px solid var(--primary); }
+#myTitleEntries tr:focus-visible, #mySaveEntries tr:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
