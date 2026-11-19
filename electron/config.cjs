@@ -10,7 +10,7 @@ const fields = [
   'useRemoteOracle', 'serverUrl', 'workerKey', 'oracleHost', 'oraclePort',
   'interface', 'hardware', 'output', 'metadata', 'assets',
   'userId', 'titleId', 'entryId', 'userName', 'sourcePort', 'dataPort', 'discoveryPort', 'preferIpv6',
-  'uploadDisplayName',
+  'uploadDisplayName', 'uiLayout',
 ];
 const defaults = {
   useRemoteOracle: true,
@@ -32,6 +32,7 @@ const defaults = {
   discoveryPort: 1006,
   preferIpv6: false,
   uploadDisplayName: 'GarlicTransfer',
+  uiLayout: 'classic',
 };
 
 function parse(text) {
@@ -68,6 +69,7 @@ function loadSettings() {
     sourcePort: Number(stored.sourcePort || defaults.sourcePort),
     dataPort: Number(stored.dataPort || defaults.dataPort),
     discoveryPort: Number(stored.discoveryPort || defaults.discoveryPort),
+    uiLayout: /^[a-z][a-z0-9-]{0,63}$/.test(stored.uiLayout || '') ? stored.uiLayout : 'classic',
     preferIpv6: stored.preferIpv6 === 'true',
   };
 }
@@ -75,7 +77,8 @@ function loadSettings() {
 function saveSettings(settings) {
   const lines = ['; GarlicTransfer settings'];
   for (const field of fields) {
-    const value = field === 'useRemoteOracle' ? Boolean(settings[field]) : settings[field];
+    const value = field === 'uiLayout' ? (/^[a-z][a-z0-9-]{0,63}$/.test(settings[field] || '') ? settings[field] : 'classic')
+      : field === 'useRemoteOracle' ? Boolean(settings[field]) : settings[field];
     lines.push(`${field}=${value ?? ''}`);
   }
   fs.writeFileSync(configPath, `${lines.join('\n')}\n`, { mode: 0o600 });

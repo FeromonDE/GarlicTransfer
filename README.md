@@ -107,6 +107,22 @@ the legacy index and entry. Missing index entries fall back to individual
 manifests. New downloads always write to the organized layout. Folder-related
 functions include short purpose notes.
 
+## Skins and tree layout
+
+Select a skin in the **left sidebar below USER · source saves** for the CMP sidebar, source-user
+filter and expandable User → Game → Files trees. The selection saves automatically;
+Classic remains available. Tree actions use the existing Garlic transfer and save
+workflows. Source filters do not change the selected upload destination.
+Tree data uses exact user/title/entry matching and shared indexed adapters.
+Selection-only updates keep existing rows. Inventory changes restore scroll,
+expanded branches and matching focus, while stale local refreshes are ignored.
+
+Spicy Garlic, Chill Onion, Onion, Green Onion and Evil Onion use one shared
+layout. External add-ins contain only `skin.json` and PNG artwork. Click
+**Open** in the sidebar, copy in a skin folder, then click **Reload**.
+External skins live in `%root%/Skins` beside `GarlicTransfer.exe`.
+See [SKINS.md](SKINS.md) for the format and fallback behavior.
+
 ## Download saves
 
 1. Start GarlicTransfer and click **Discover consoles**.

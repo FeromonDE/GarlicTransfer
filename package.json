@@ -15,7 +15,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/renderer.js && node --check electron/my_saves.js && node --check electron/save_editor.cjs && node --check electron/remote_oracle.cjs && node --check electron/config.cjs && node --check electron/discovery.cjs && node --check electron/titles.cjs && node --check electron/paths.cjs && node --check electron/pairing_store.cjs && node --check electron/console_names.cjs && node --check electron/download_layout.cjs && node --check electron/folder_paths.js",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/renderer.js && node --check electron/my_saves.js && node --check electron/save_editor.cjs && node --check electron/remote_oracle.cjs && node --check electron/config.cjs && node --check electron/discovery.cjs && node --check electron/titles.cjs && node --check electron/paths.cjs && node --check electron/pairing_store.cjs && node --check electron/console_names.cjs && node --check electron/download_layout.cjs && node --check electron/folder_paths.js && node --check electron/cmp_skin.js && node --check electron/skins.cjs && node --check electron/skin_appearance.js && node --check electron/tree_bridge.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -23,7 +23,8 @@
   },
   "devDependencies": {
     "electron": "28.3.3",
-    "electron-builder": "24.13.3"
+    "electron-builder": "24.13.3",
+    "jsdom": "^24.1.3"
   },
   "build": {
     "appId": "com.earthonion.garlictransfer",

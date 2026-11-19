@@ -8,6 +8,7 @@ import sqlite3
 import struct
 import sys
 import threading
+from contextlib import closing
 from pathlib import Path
 from poc.dt_layout import root_manifest, existing_payload
 
@@ -289,9 +290,8 @@ def user_registry_value(body):
     user_id, key, value_type, _, size = struct.unpack("<IIIIQ", body)
     value = b""
     if key == 0x101 and value_type == 1:
-        db = sqlite3.connect(METADATA_PATH)
-        row = db.execute("SELECT login_id FROM user_info_tbl WHERE user_id = ?", (user_id,)).fetchone()
-        db.close()
+        with closing(sqlite3.connect(METADATA_PATH)) as db:
+            row = db.execute("SELECT login_id FROM user_info_tbl WHERE user_id = ?", (user_id,)).fetchone()
         if row and row[0]:
             value = row[0].encode() + b"\0"
     if not value:

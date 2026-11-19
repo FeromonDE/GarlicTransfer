@@ -4,6 +4,7 @@ import sqlite3
 import struct
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -27,7 +28,7 @@ class ExternalSaveTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text())
             files = manifest[str(0x10000)]["files"]
             self.assertEqual([item["file"] for item in files], ["sdimg_one", "sdimg_two"])
-            with sqlite3.connect(output) as db:
+            with closing(sqlite3.connect(output)) as db:
                 self.assertEqual(db.execute("SELECT actual_size FROM dir_entry_info_tbl").fetchall(), [(11,)])
             with patch.dict(os.environ, {"DT_ASSETS": str(assets), "DT_METADATA": str(output),
                                         "DT_MANIFEST": str(manifest_path), "DT_UPLOAD_KIND": "save"}), patch.object(dt_source, "send_record") as send:
@@ -60,14 +61,14 @@ class ExternalSaveTests(unittest.TestCase):
             template = Path(__file__).resolve().parent.parent / "poc" / "templates" / "single-save.db"
             import shutil
             shutil.copyfile(template, source)
-            with sqlite3.connect(source) as db:
+            with closing(sqlite3.connect(source)) as db, db:
                 db.execute("UPDATE user_info_tbl SET user_id = ?", (int("18c60ea2", 16),))
             create_external_save(
                 output, "18c60ea2", "PPSA12345", image, assets,
                 user_name="tester", manifest_output=manifest_output, source_metadata=source,
             )
             entry_id = 0x10000
-            with sqlite3.connect(output) as db:
+            with closing(sqlite3.connect(output)) as db:
                 directory = db.execute(
                     "SELECT path, actual_size, transfer_size, required_size FROM dir_entry_info_tbl"
                 ).fetchone()
@@ -102,7 +103,7 @@ class ExternalSaveTests(unittest.TestCase):
                 root / "cache", user_name="tester",
             )
             self.assertTrue(output.is_file())
-            with sqlite3.connect(output) as db:
+            with closing(sqlite3.connect(output)) as db:
                 owner = db.execute("SELECT user_id FROM user_info_tbl").fetchone()[0]
             self.assertEqual(owner, int("18c60ea2", 16))
 

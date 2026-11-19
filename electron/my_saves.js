@@ -41,6 +41,10 @@ for (const btn of document.querySelectorAll('.wizard-back')) {
 }
 
 let mySaves = [];
+let cmpLocalUsers = [];
+let cmpLocalRequest = 0;
+let cmpInventoryRequest = 0;
+let loadedLocalPath = null;
 let localProfiles = [];
 let selectedTitle = null;
 let selectedLocalSave = null;
@@ -63,6 +67,7 @@ function myLog(message) {
 
 function setMyOperation(value) {
   mySaveOperation = value;
+  cmpLayout.setLibraryBusy(value);
   for (const button of document.querySelectorAll('#libraryPage button')) button.disabled = value;
   for (const input of document.querySelectorAll('.editor-tools input')) input.disabled = value;
   myControls.fileEditor.disabled = value;
@@ -94,9 +99,14 @@ async function runMyOperation(action) {
   }
 }
 
-function localSaveKey(save) {
-  return `${save.entry.id}:${save.file.file}`;
-}
+// Function Save File Key
+function localSaveKey(save) { return window.SaveTreeBridge.fileKey(save.entry, save.file); }
+
+// Function Local Tree
+const libraryTree = window.SaveTreeBridge.library({
+  layout: cmpLayout, onOpen: (save) => selectMySave(save),
+  onAction: (action) => myControls[action].click(), isBusy: () => mySaveOperation,
+});
 
 function myTitleGroups() {
   const groups = new Map();
@@ -196,6 +206,16 @@ function localSaveActions(save) {
 
 function renderMySaves() {
   closeSaveContextMenu();
+  if (cmpLayout.active) {
+    libraryTree.render({ saves: mySaves, users: cmpLocalUsers,
+      filter: myControls.localUserSelect.value.toLowerCase(), busy: mySaveOperation, selected: selectedLocalSave });
+    return;
+  }
+  renderClassicMySaves();
+}
+
+// Function Classic Save List
+function renderClassicMySaves() {
   const groups = myTitleGroups();
   const selectedGroup = selectedTitle ? groups.get(selectedTitle) : null;
   if (selectedTitle && !selectedGroup) selectedTitle = null;
@@ -277,25 +297,42 @@ function selectMySave(save) {
   myStatus(`${save.file.file} selected. Choose what you want to do next.`);
 }
 
+// Function Local Profile
 async function selectLocalConsole(profileId) {
   const profile = localProfiles.find((candidate) => candidate.id === profileId);
   if (!profile) {
+    loadedLocalPath = null; cmpLocalRequest++; cmpInventoryRequest++;
+    cmpLayout.resetLibrary();
+    selectedTitle = null; selectedLocalSave = null;
+    myControls.selectedSavePanel.hidden = true;
+    cmpLocalUsers = [];
     mySaves = [];
     renderMySaves();
     myStatus('No downloaded saves were found in this profile.');
     return;
   }
-  if (decryptedWorkspace && !window.confirm('Switch profiles and close the current decrypted files?')) {
+  const switching = loadedLocalPath !== profile.path;
+  if (switching && decryptedWorkspace && !window.confirm('Switch profiles and close the current decrypted files?')) {
     myControls.localConsoleSelect.value = options().assets.split(/[\\/]/).pop();
     return;
   }
-  if (decryptedWorkspace) closeMyWorkspace();
-  selectedTitle = null;
-  selectedLocalSave = null;
-  myControls.selectedSavePanel.hidden = true;
+  if (switching) {
+    cmpLayout.resetLibrary();
+    if (decryptedWorkspace) closeMyWorkspace();
+    selectedTitle = null; selectedLocalSave = null;
+    myControls.selectedSavePanel.hidden = true;
+  }
+  loadedLocalPath = profile.path;
   controls.output.value = profile.path;
   controls.assets.value = profile.path;
   controls.metadata.value = '';
+  cmpLocalUsers = profile.users.map((id) => ({ id, name: id }));
+  const request = ++cmpLocalRequest;
+  try {
+    const users = await window.saveTransfer.users(folderPaths.metadataPath(profile.path, 'metadata.db'));
+    if (request !== cmpLocalRequest) return;
+    cmpLocalUsers = users;
+  } catch { /* Older local saves may have no user catalogue. */ }
   const previousUser = myControls.localUserSelect.value;
   myControls.localUserSelect.replaceChildren();
   const allUsers = document.createElement('option');
@@ -305,7 +342,8 @@ async function selectLocalConsole(profileId) {
   for (const owner of profile.users) {
     const option = document.createElement('option');
     option.value = owner;
-    option.textContent = owner;
+    const name = cmpLocalUsers.find((user) => user.id.toLowerCase() === owner.toLowerCase())?.name;
+    option.textContent = name ? `${name} (${owner})` : owner;
     myControls.localUserSelect.appendChild(option);
   }
   myControls.localUserSelect.value = profile.users.includes(previousUser) ? previousUser : '';
@@ -343,9 +381,12 @@ myControls.localUserSelect.addEventListener('change', () => runMyOperation(async
   myStatus(`${mySaves.length} save file(s) in this view.`);
 }));
 
+// Function Save Refresh
 async function refreshMySaves() {
-  const result = await window.saveTransfer.localSaves(options().assets);
-  const owner = myControls.localUserSelect.value.toLowerCase();
+  const assets = options().assets, owner = myControls.localUserSelect.value.toLowerCase();
+  const request = ++cmpInventoryRequest;
+  const result = await window.saveTransfer.localSaves(assets);
+  if (request !== cmpInventoryRequest || assets !== options().assets || owner !== myControls.localUserSelect.value.toLowerCase()) return mySaves.length;
   mySaves = (result.entries || [])
     .filter((entry) => !owner || entry.owner.toLowerCase() === owner)
     .flatMap((entry) => entry.files.map((file) => ({ entry, file })));
@@ -830,3 +871,6 @@ window.saveEditor.onEvent((event) => {
   if (event.type === 'log') myLog(event.message);
   if (event.type === 'error') myStatus(event.message);
 });
+
+// Refresh alternate layout.
+document.addEventListener('cmp-layout-changed', renderMySaves);

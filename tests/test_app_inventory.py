@@ -3,7 +3,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from pathlib import Path
 
 from poc.dt_backend import list_inventory
@@ -20,34 +20,31 @@ class AppInventoryTests(unittest.TestCase):
     def test_wrong_schema_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "wrong.db"
-            db = sqlite3.connect(path)
-            db.execute("CREATE TABLE unrelated (id)")
-            db.close()
+            with closing(sqlite3.connect(path)) as db, db:
+                db.execute("CREATE TABLE unrelated (id)")
             with self.assertRaisesRegex(ValueError, "Invalid transfer metadata"):
                 list_inventory(path)
 
     def test_all_entry_types_are_categorized(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "metadata.db"
-            db = sqlite3.connect(path)
-            db.execute("CREATE TABLE dir_entry_info_tbl (id, path, actual_size, target_type)")
-            db.executemany(
-                "INSERT INTO dir_entry_info_tbl VALUES (?, ?, ?, ?)",
-                [
-                    (1, "/system_data/priv/cache/profile/0x18C60EA2/", 475760, 0),
-                    (349, "/user/app/PPSA98513/", 43763, 1),
-                    (348, "/user/app/PPSA98513/sce_sys/", 16633876, 1),
-                    (122, "/user/home/18c60ea2/savedata_prospero/PPSA21564/", 20971520, 3),
-                    (126, "/user/home/18c60ea2/savedata_prospero_for_cloud/syndy_auto_sync/", 65536, 3),
-                    (87, "/user/av_contents/", 1056720102, 2),
-                    (5, "/system_data/priv/appmeta/NPXS40074/", 160, 1),
-                    (205, "/user/playgo/app/IV0005-PPSA01385_00-DIAGQAINSPECTION/00/", 2156, 1),
-                ],
-            )
-            db.execute("CREATE TABLE user_info_tbl (user_id, user_name, login_id, online_id)")
-            db.execute("INSERT INTO user_info_tbl VALUES (415633058, 'tester', 'tester@example.invalid', 'tester')")
-            db.commit()
-            db.close()
+            with closing(sqlite3.connect(path)) as db, db:
+                db.execute("CREATE TABLE dir_entry_info_tbl (id, path, actual_size, target_type)")
+                db.executemany(
+                    "INSERT INTO dir_entry_info_tbl VALUES (?, ?, ?, ?)",
+                    [
+                        (1, "/system_data/priv/cache/profile/0x18C60EA2/", 475760, 0),
+                        (349, "/user/app/PPSA98513/", 43763, 1),
+                        (348, "/user/app/PPSA98513/sce_sys/", 16633876, 1),
+                        (122, "/user/home/18c60ea2/savedata_prospero/PPSA21564/", 20971520, 3),
+                        (126, "/user/home/18c60ea2/savedata_prospero_for_cloud/syndy_auto_sync/", 65536, 3),
+                        (87, "/user/av_contents/", 1056720102, 2),
+                        (5, "/system_data/priv/appmeta/NPXS40074/", 160, 1),
+                        (205, "/user/playgo/app/IV0005-PPSA01385_00-DIAGQAINSPECTION/00/", 2156, 1),
+                    ],
+                )
+                db.execute("CREATE TABLE user_info_tbl (user_id, user_name, login_id, online_id)")
+                db.execute("INSERT INTO user_info_tbl VALUES (415633058, 'tester', 'tester@example.invalid', 'tester')")
 
             entry_directory = Path(folder) / "126"
             entry_directory.mkdir()
