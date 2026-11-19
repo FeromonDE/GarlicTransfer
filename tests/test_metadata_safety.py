@@ -3,6 +3,7 @@ import shutil
 import struct
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from poc.dt_backend import index_downloaded_manifests
@@ -48,7 +49,7 @@ class MetadataSafetyTests(unittest.TestCase):
         template = Path(__file__).resolve().parent.parent / "poc" / "templates" / "single-save.db"
         shutil.copyfile(template, source)
         import sqlite3
-        with sqlite3.connect(source) as db:
+        with closing(sqlite3.connect(source)) as db, db:
             db.execute("UPDATE user_info_tbl SET user_id = ?", (int(USER_ID, 16),))
         return root, assets, source
 

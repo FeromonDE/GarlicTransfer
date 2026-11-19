@@ -250,20 +250,19 @@ def download(options):
         emit("status", step=3, message="Downloading save metadata.")
         data = DtChannel(host, 1005, oracle_host, oracle_port, version=protocol_version)
         download_metadata(data, output)
-        db = sqlite3.connect(metadata_file(output))
-        rows = db.execute(
-            "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
-        ).fetchall()
-        users = [
-            {
-                "id": f"{user_id:08x}",
-                "name": user_name or login_id or online_id or f"{user_id:08x}",
-            }
-            for user_id, user_name, login_id, online_id in db.execute(
-                "SELECT user_id, user_name, login_id, online_id FROM user_info_tbl ORDER BY user_name"
-            )
-        ]
-        db.close()
+        with closing(sqlite3.connect(metadata_file(output))) as db:
+            rows = db.execute(
+                "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
+            ).fetchall()
+            users = [
+                {
+                    "id": f"{user_id:08x}",
+                    "name": user_name or login_id or online_id or f"{user_id:08x}",
+                }
+                for user_id, user_name, login_id, online_id in db.execute(
+                    "SELECT user_id, user_name, login_id, online_id FROM user_info_tbl ORDER BY user_name"
+                )
+            ]
         downloaded_ids = index_downloaded_manifests(output)
         entries = []
         for entry_id, path, size, target_type in rows:
@@ -352,8 +351,8 @@ def download(options):
 
 
 def list_users(path):
-    db = sqlite3.connect(path)
-    users = [
+    with closing(sqlite3.connect(path)) as db:
+        users = [
             {
                 "id": f"{user_id:08x}",
                 "name": user_name or login_id or online_id or f"{user_id:08x}",
@@ -362,7 +361,6 @@ def list_users(path):
                 "SELECT user_id, user_name, login_id, online_id FROM user_info_tbl ORDER BY user_name"
             )
         ]
-    db.close()
     emit("users", users=users)
 
 
@@ -371,24 +369,22 @@ def list_inventory(path):
     metadata_path = Path(path).expanduser().resolve()
     if not metadata_path.is_file() or metadata_path.stat().st_size == 0:
         raise ValueError(f"Metadata missing or empty: {metadata_path}. Browse console saves again.")
-    db = sqlite3.connect(metadata_path.as_uri() + "?mode=ro", uri=True)
-    tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    if not {"dir_entry_info_tbl", "user_info_tbl"}.issubset(tables):
-        db.close()
-        raise ValueError(f"Invalid transfer metadata: {metadata_path}. Browse console saves again.")
-    rows = db.execute(
-        "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
-    ).fetchall()
-    users = [
-        {
-            "id": f"{user_id:08x}",
-            "name": user_name or login_id or online_id or f"{user_id:08x}",
-        }
-        for user_id, user_name, login_id, online_id in db.execute(
-            "SELECT user_id, user_name, login_id, online_id FROM user_info_tbl ORDER BY user_name"
-        )
-    ]
-    db.close()
+    with closing(sqlite3.connect(metadata_path.as_uri() + "?mode=ro", uri=True)) as db:
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {"dir_entry_info_tbl", "user_info_tbl"}.issubset(tables):
+            raise ValueError(f"Invalid transfer metadata: {metadata_path}. Browse console saves again.")
+        rows = db.execute(
+            "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
+        ).fetchall()
+        users = [
+            {
+                "id": f"{user_id:08x}",
+                "name": user_name or login_id or online_id or f"{user_id:08x}",
+            }
+            for user_id, user_name, login_id, online_id in db.execute(
+                "SELECT user_id, user_name, login_id, online_id FROM user_info_tbl ORDER BY user_name"
+            )
+        ]
     downloaded_ids = index_downloaded_manifests(profile_root(Path(path).parent))
     entries = []
     for entry_id, save_path, size, target_type in rows:

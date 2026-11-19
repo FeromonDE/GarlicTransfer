@@ -75,7 +75,7 @@ INCLUDED TREE CLEANUP
 - All previous changes and external skin formats are included.
 
 VALIDATION
-78 Node checks and 89 Python tests passed, plus syntax and whitespace checks.
+78 Node checks and 92 Python tests passed, plus syntax and whitespace checks.
 Image failure behavior is tested through simulated browser error events.
 No rendered Windows appearance or live PS5 test performed.
 
@@ -90,9 +90,15 @@ MASCOT LOADING FIX (v0.3.3)
 Mascots remain invisible until their image load event. The reserved image
 space prevents name/alt-text flashes and layout jumps, including fallback
 loading. Unchanged loaded mascots stay visible on reload.
-This source matches the full-resources build from before the size cleanup.
+The mascot code matches the full-resources build from before the size cleanup.
 
 CI DEPENDENCIES
 The identity-check workflow installs locked development dependencies before
 testing. This includes jsdom for the skin and tree tests. Install scripts
 are skipped in that test job because the Electron binary is not needed.
+
+WINDOWS DATABASE CLEANUP
+SQLite readers and test fixtures close their connections explicitly, including
+query failures. This releases database files before temporary-folder cleanup.
+POSIX privilege tests run only on POSIX; Windows pairing behavior has a separate
+test. All languages, plain title lists and original artwork are retained.
