@@ -1,3 +1,4 @@
+const { loadSkins, getSkinMascot, externalSkinsFolder } = require('./skins.cjs');
 const { resolveMetadata } = require('./download_layout.cjs');
 const { metadataPath, otherDataPath } = require('./folder_paths.js');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
@@ -268,6 +269,8 @@ function getConsoles(options) {
 }
 
 function getUsers(metadataPath) {
+  metadataPath = resolveMetadata(metadataPath, path.dirname(metadataPath));
+  if (!fs.existsSync(metadataPath)) return Promise.reject(new Error('Browse the console to obtain user metadata.'));
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ['-m', 'poc.dt_backend', 'users', metadataPath], { cwd: workDir, env: { ...process.env, PYTHONPATH: resourceRoot } });
     let buffer = '';
@@ -621,4 +624,14 @@ registerSaveEditor({
   python: pythonBin(),
   resourceRoot,
   workDir,
+});
+
+// Function Skin Folder
+function skinsFolder() { return externalSkinsFolder(app.isPackaged, app.getPath('exe'), app.getAppPath()); }
+ipcMain.handle('skins:list', () => loadSkins(path.join(__dirname, 'skins'), skinsFolder()));
+ipcMain.handle('skins:mascot', (_event, id) => getSkinMascot(path.join(__dirname, 'skins'), skinsFolder(), id));
+ipcMain.handle('skins:open', async () => {
+  const folder = skinsFolder(); fs.mkdirSync(folder, { recursive: true });
+  const error = await shell.openPath(folder); if (error) throw new Error(error);
+  return folder;
 });

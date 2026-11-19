@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('saveTransfer', {
+  getSkins: () => ipcRenderer.invoke('skins:list'),
+  getSkinMascot: (id) => ipcRenderer.invoke('skins:mascot', id),
+  openSkinsFolder: () => ipcRenderer.invoke('skins:open'),
   pairingAvailable: true,
   firewallAvailable: process.platform === 'win32',
   runFirewallHelper: () => ipcRenderer.invoke('windows:firewall-helper'),
