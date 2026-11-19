@@ -6,18 +6,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GarlicTransfer</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="cmp_skin.css">
 </head>
 <body>
   <aside class="sidebar">
-    <div class="brand">Garlic<strong>Transfer</strong></div>
+    <div class="brand"><span class="classic-brand">Garlic<strong>Transfer</strong></span><span class="cmp-brand cmp-only"><img alt="Spicy Garlic mascot"><span>Spicy<br>Garlic<small>GarlicTransfer</small></span></span></div>
     <nav class="nav">
       <button class="nav-item active" data-page="console" type="button">Console</button>
       <button class="nav-item" data-page="download" type="button">Download</button>
       <button class="nav-item" data-page="upload" type="button">Upload</button>
       <button class="nav-item" data-page="library" type="button">Library</button>
+      <button id="cmpCryptoNav" class="cmp-nav-btn cmp-only" type="button">Encrypt / Decrypt</button>
       <div class="nav-divider"></div>
       <button class="nav-item" data-page="settings" type="button">Settings</button>
     </nav>
+    <div id="cmpUserPanel" class="cmp-only cmp-user-panel">
+      <label for="cmpUserSelect">USER · source saves</label>
+      <select id="cmpUserSelect" aria-label="Filter source saves by user"><option value="">All users</option></select>
+      <p>Choose the upload destination separately.</p>
+    </div>
+    <div id="sidebarSkinPanel" class="skin-sidebar">
+      <label for="uiLayout">SKIN</label>
+      <select id="uiLayout" aria-label="Choose skin"><option value="classic">Garlic Classic</option></select>
+      <div class="skin-sidebar-actions">
+        <button id="openSkinsFolder" type="button" title="Open Skins Folder" aria-label="Open Skins Folder">Open</button>
+        <button id="reloadSkins" type="button" title="Reload Skins" aria-label="Reload Skins">Reload</button>
+      </div>
+      <p id="layoutStatus" class="skin-sidebar-status" role="status">Skin changes save automatically.</p>
+      <details id="skinWarnings" class="skin-warnings" hidden><summary id="skinWarningSummary">Skin warnings</summary><ul id="skinWarningList"></ul></details>
+    </div>
     <div class="sidebar-footer">
       <div id="sidebarConsole" class="console-badge">
         <span class="status-dot"></span>
@@ -41,6 +58,13 @@
       </div>
     </div>
 
+    <div id="cmpConnection" class="cmp-connection cmp-only" hidden>
+      <label>Target PS5<span id="cmpTarget" class="cmp-target">Locate a PS5 to begin</span></label>
+      <label>JB helper PS5 IPv4<input id="cmpOracleHost" spellcheck="false" placeholder="192.168.0.125"></label>
+      <label class="cmp-worker"><input id="cmpWorker" type="checkbox"> Use GarlicWorker</label>
+      <button id="cmpConnectionSettings" type="button">Connection settings</button>
+      <button id="cmpViewLog" type="button">View log</button>
+    </div>
     <div class="page-scroll">
 
       <!-- ═══ Console ═══ -->
@@ -100,7 +124,8 @@
             <span id="entryCount">No items selected</span>
             <button id="downloadSelectedBtn" type="button" disabled>Download selected</button>
           </div>
-          <div class="table-wrap">
+          <div id="cmpRemoteTree" class="cmp-only"></div>
+          <div class="table-wrap classic-remote-table">
             <table>
               <thead><tr><th></th><th>Title</th><th>User</th><th>Size (MiB)</th><th>Action</th></tr></thead>
               <tbody id="entries"><tr><td colspan="5" class="empty">Browse a console to list its saves.</td></tr></tbody>
@@ -149,6 +174,8 @@
           <label id="userSelectLabel" hidden>Upload to user
             <select id="userSelect"></select>
           </label>
+          <p id="cmpUploadSummary" class="cmp-only card-hint">No entries selected.</p>
+          <div id="cmpUploadTree" class="cmp-only"></div>
           <label id="uploadSaveSelectLabel" hidden>Select saves to upload (Ctrl/Cmd-click for multiple)
             <select id="uploadSaveSelect" multiple size="5"></select>
           </label>
@@ -199,6 +226,7 @@
                   <button id="decryptExternalBtn" class="secondary" type="button">Decrypt another save…</button>
                 </div>
               </div>
+              <div id="cmpLibraryTree" class="cmp-only"></div>
               <div class="library-heading">
                 <button id="mySavesBackBtn" class="secondary" type="button" hidden>← All titles</button>
                 <span id="mySavesLibraryLabel">All titles</span>
@@ -425,6 +453,9 @@
     </div>
   </dialog>
   <script src="folder_paths.js"></script>
+  <script src="cmp_skin.js"></script>
+  <script src="tree_bridge.js"></script>
+  <script src="skin_appearance.js"></script>
   <script src="renderer.js"></script>
   <script src="my_saves.js"></script>
 </body>

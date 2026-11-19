@@ -7,6 +7,7 @@ import socket
 import sqlite3
 import struct
 import time
+from contextlib import closing
 from pathlib import Path
 
 from poc.dt_layout import payload_directory, metadata_file, entry_manifest
@@ -205,11 +206,10 @@ def download_entry(channel, entry_id, output, package_only=False):
 
 
 def browse_entries(metadata_path):
-    db = sqlite3.connect(metadata_path)
-    rows = db.execute(
-        "SELECT id, path, actual_size FROM dir_entry_info_tbl WHERE target_type = 3 ORDER BY id"
-    ).fetchall()
-    db.close()
+    with closing(sqlite3.connect(metadata_path)) as db:
+        rows = db.execute(
+            "SELECT id, path, actual_size FROM dir_entry_info_tbl WHERE target_type = 3 ORDER BY id"
+        ).fetchall()
     print("[browser] save entries:")
     for entry_id, path, size in rows:
         parts = path.strip("/").split("/")

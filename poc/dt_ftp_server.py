@@ -4,6 +4,7 @@ import re
 import socket
 import sqlite3
 import threading
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -116,7 +117,7 @@ class Catalog:
         self.backend = backend
         self.download_lock = threading.Lock()
         self.entries = {}
-        with sqlite3.connect(f"file:{metadata}?mode=ro", uri=True) as db:
+        with closing(sqlite3.connect(f"file:{metadata}?mode=ro", uri=True)) as db:
             rows = db.execute(
                 "SELECT id, path, actual_size, target_type FROM dir_entry_info_tbl ORDER BY id"
             ).fetchall()

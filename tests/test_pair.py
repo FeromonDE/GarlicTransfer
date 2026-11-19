@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from poc.dt_pair import discovery_reply, pair, save_prefix, validate_options
@@ -51,6 +52,7 @@ class PairTests(unittest.TestCase):
                 save_prefix(b"short", destination)
             self.assertEqual(destination.read_bytes(), bytes(reversed(range(32))))
 
+    @unittest.skipUnless(os.name == "posix", "POSIX ownership only")
     def test_privileged_prefix_is_returned_to_the_app_user(self):
         with tempfile.TemporaryDirectory() as folder:
             destination = Path(folder) / "pairing-prefix.bin"
@@ -62,6 +64,7 @@ class PairTests(unittest.TestCase):
             chown.assert_called_once_with(destination, 1000, 1001)
             self.assertEqual(destination.read_bytes(), bytes(range(32)))
 
+    @unittest.skipUnless(os.name == "posix", "POSIX privilege changes only")
     def test_privileged_pairing_drops_back_to_the_app_user_after_binding(self):
         from poc.dt_pair import drop_privileges_from_environment
 
@@ -75,6 +78,20 @@ class PairTests(unittest.TestCase):
         setgroups.assert_called_once_with([])
         setgid.assert_called_once_with(1001)
         setuid.assert_called_once_with(1000)
+
+    def test_non_posix_pairing_needs_no_posix_identity_functions(self):
+        from poc.dt_pair import drop_privileges_from_environment
+
+        platform = SimpleNamespace(
+            name="nt", fdopen=os.fdopen, chmod=os.chmod, replace=os.replace,
+            environ={"DT_PAIRING_UID": "1000", "DT_PAIRING_GID": "1001"},
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            destination = Path(folder) / "private" / "pairing-prefix.bin"
+            with patch("poc.dt_pair.os", platform):
+                save_prefix(bytes(range(32)), destination)
+                drop_privileges_from_environment()
+            self.assertEqual(destination.read_bytes(), bytes(range(32)))
 
     def test_one_encrypted_request_pairs_without_answer_or_data_port(self):
         prefix = bytes(range(32))

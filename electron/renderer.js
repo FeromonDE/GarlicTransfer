@@ -2,7 +2,7 @@ const folderPaths = window.transferFolders;
 const byId = (id) => document.getElementById(id);
 const controls = {};
 for (const id of [
-  'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
+  'uiLayout', 'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
@@ -27,6 +27,67 @@ let browseSessionActive = false;
 let profileRoot = null;
 const selectedEntryIds = new Set();
 const downloadedEntryIds = new Set();
+let cmpFilesRequest = 0;
+const cmpLayout = window.CmpSkin.createController(document, {
+  remoteSelection: () => [...selectedEntryIds],
+  toggleRemote: (ids, checked) => {
+    for (const id of ids) { if (checked) selectedEntryIds.add(Number(id)); else selectedEntryIds.delete(Number(id)); }
+    updateSelection();
+  },
+  download: (id) => startDownload([Number(id)]),
+  filterChanged: () => updateSelection(),
+  localUser: (owner) => {
+    const select = byId('localUserSelect');
+    select.value = owner; select.dispatchEvent(new Event('change'));
+  },
+});
+
+// Refresh cached tree filenames.
+async function refreshCmpFiles() {
+  if (!cmpLayout.active) return;
+  const assets = options().assets;
+  const request = ++cmpFilesRequest;
+  try {
+    const result = await window.saveTransfer.localSaves(assets);
+    if (request === cmpFilesRequest && assets === options().assets) cmpLayout.setFiles(result.entries || []);
+  } catch (error) { appendLog(`[CMP] Could not load local filenames: ${error.message}`); }
+}
+
+// Function Upload Tree
+const uploadTree = window.SaveTreeBridge.upload({
+  layout: cmpLayout, select: controls.uploadSaveSelect, title: controls.externalTitleId,
+  summary: byId('cmpUploadSummary'), getEntries: () => availableEntries,
+});
+function renderCmpUpload() { uploadTree.render(); }
+controls.uploadSaveSelect.addEventListener('change', uploadTree.updateSelection);
+
+// Mirror connection settings.
+function updateCmpConnection() {
+  const selected = controls.consoleSelect.selectedOptions[0];
+  byId('cmpTarget').textContent = selected?.value ? selected.textContent : 'Locate a PS5 to begin';
+  byId('cmpOracleHost').value = controls.oracleHost.value;
+  byId('cmpWorker').checked = controls.useRemoteOracle.checked;
+  byId('cmpOracleHost').disabled = controls.useRemoteOracle.checked || Boolean(activeTransfer);
+}
+
+// Function Skin Layout.
+const skinAppearance = window.SkinAppearance.create(document, window.saveTransfer, (enabled) => {
+  if (!cmpLayout.applyLayout(enabled)) return;
+  if (!enabled) renderClassicSaveEntries();
+  updateSelection(); updateCmpConnection();
+  document.dispatchEvent(new Event('cmp-layout-changed'));
+  refreshCmpFiles();
+});
+byId('cmpOracleHost').addEventListener('input', () => { controls.oracleHost.value = byId('cmpOracleHost').value; });
+byId('cmpWorker').addEventListener('change', () => { controls.useRemoteOracle.checked = byId('cmpWorker').checked; updateOracleMode(); });
+byId('cmpConnectionSettings').addEventListener('click', () => showPage('settings'));
+byId('cmpViewLog').addEventListener('click', () => byId('logDock').classList.toggle('expanded'));
+byId('cmpCryptoNav').addEventListener('click', () => {
+  document.querySelector('.nav-item[data-page="library"]').click();
+  byId('decryptExternalBtn')?.focus();
+});
+controls.externalTitleId.addEventListener('input', renderCmpUpload);
+
 
 function options() {
   const clientHost = controls.consoleSelect.value;
@@ -38,6 +99,7 @@ function options() {
     workerKey: controls.workerKey.value.trim(),
     clientHost,
     hostId: controls.consoleSelect.selectedOptions[0]?.dataset.hostId || '',
+    uiLayout: controls.uiLayout.value,
     systemVersion: controls.consoleSelect.selectedOptions[0]?.dataset.firmware || '',
     interface: controls.interface.value.trim(),
     hardware: Number(controls.hardware.value || 0),
@@ -87,11 +149,13 @@ function applyConsoleProfile() {
   const selected = controls.consoleSelect.selectedOptions[0];
   const identity = selected?.dataset.hostId || selected?.value || 'default';
   const profile = identity.replace(/[^A-Za-z0-9_.-]/g, '_');
+  cmpFilesRequest++; cmpLayout.reset();
   controls.output.value = profilePath(root, profile);
   controls.assets.value = controls.output.value;
   controls.metadata.value = '';
   refreshPairingStatus();
   updateSidebarConsole();
+  updateCmpConnection();
 }
 
 async function refreshPairingStatus() {
@@ -118,19 +182,24 @@ async function refreshPairingStatus() {
 
 function updateSelection() {
   const count = selectedEntryIds.size;
-  controls.entryCount.textContent = count
+  const visible = cmpLayout.active ? cmpLayout.visibleRemoteEntries() : availableEntries;
+  const visibleSelected = visible.filter((entry) => selectedEntryIds.has(entry.id)).length;
+  controls.entryCount.textContent = cmpLayout.active ? `${count} entries selected · ${visible.length} visible` : count
     ? `${count} of ${availableEntries.length} save(s) selected`
     : `${availableEntries.length} save(s); none selected`;
-  controls.selectAllEntries.checked = count > 0 && count === availableEntries.length;
-  controls.selectAllEntries.indeterminate = count > 0 && count < availableEntries.length;
-  controls.selectAllEntries.disabled = Boolean(activeTransfer) || !availableEntries.length;
+  controls.selectAllEntries.checked = visibleSelected > 0 && visibleSelected === visible.length;
+  controls.selectAllEntries.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+  controls.selectAllEntries.disabled = Boolean(activeTransfer) || !visible.length;
   controls.downloadSelectedBtn.disabled = Boolean(activeTransfer) || count === 0;
   controls.finishBtn.hidden = !browseSessionActive || Boolean(activeTransfer);
   for (const checkbox of document.querySelectorAll('.entry-check')) checkbox.disabled = Boolean(activeTransfer);
   for (const button of document.querySelectorAll('.row-download')) button.disabled = Boolean(activeTransfer);
+  cmpLayout.syncSelection();
 }
 
 function busy(value) {
+  cmpLayout.setBusy(value);
+  updateCmpConnection();
   controls.downloadBtn.disabled = value;
   controls.uploadBtn.disabled = value;
   controls.addExternalSaveBtn.disabled = value;
@@ -380,10 +449,16 @@ function renderEntryTable(container, entries, emptyText) {
   }
 }
 
+// Function Classic Save List
+function renderClassicSaveEntries() {
+  renderEntryTable(controls.entries, availableEntries.filter((entry) => entry.kind === 'save'), 'No save entries were found.');
+}
+
+// Function Inventory List
 function renderEntries() {
-  const saves = availableEntries.filter((entry) => entry.kind === 'save');
+  cmpLayout.setRemote(availableEntries.filter((entry) => entry.kind === 'save'), availableUsers);
   const others = availableEntries.filter((entry) => entry.kind !== 'save');
-  renderEntryTable(controls.entries, saves, 'No save entries were found.');
+  if (!cmpLayout.active) renderClassicSaveEntries();
   byId('otherBlock').hidden = !others.length;
   for (const [kind, block, control] of [
     ['app', 'appBlock', controls.appEntries],
@@ -414,7 +489,7 @@ async function browseSaves(forUpload = false) {
   status('Step 1/3: downloading the console save list.');
   if (!forUpload) {
     byId('saveBrowser').hidden = true;
-    controls.entries.innerHTML = '<tr><td colspan="5" class="empty">Downloading metadata…</td></tr>';
+    if (!cmpLayout.active) controls.entries.innerHTML = '<tr><td colspan="5" class="empty">Downloading metadata…</td></tr>';
   }
   try {
     await window.saveTransfer.download({
@@ -500,6 +575,7 @@ async function startUploadSource() {
 }
 
 function showUploadConfirmation() {
+  cmpLayout.setRemote(availableEntries.filter((entry) => entry.kind === 'save'), availableUsers);
   externalUploadImage = null;
   controls.externalTitleId.value = '';
   controls.externalUploadControls.hidden = !availableUsers.length;
@@ -541,6 +617,7 @@ function showUploadConfirmation() {
   controls.userSelectLabel.hidden = false;
   controls.uploadSaveSelectLabel.hidden = false;
   controls.confirmUploadBtn.hidden = false;
+  renderCmpUpload();
   status('Select downloaded entries, or add an external encrypted save.');
 }
 
@@ -591,6 +668,7 @@ async function startUpload() {
 }
 
 function updateOracleMode() {
+  updateCmpConnection();
   const remote = controls.useRemoteOracle.checked;
   controls.oracleHost.disabled = remote;
   controls.serverUrl.disabled = !remote;
@@ -600,6 +678,7 @@ controls.useRemoteOracle.addEventListener('change', updateOracleMode);
 updateOracleMode();
 
 function showPage(name) {
+  cmpLayout.setPage(name);
   for (const el of document.querySelectorAll('.page')) el.hidden = true;
   const target = byId(`${name}Page`);
   if (target) target.hidden = false;
@@ -702,12 +781,13 @@ async function loadSettings() {
   const settings = await window.saveTransfer.getSettings();
   for (const [name, value] of Object.entries(settings)) {
     const control = controls[name];
-    if (!control) continue;
+    if (!control || name === 'uiLayout') continue;
     if (control.type === 'checkbox') control.checked = Boolean(value);
     else control.value = String(value ?? '');
   }
   profileRoot = controls.output.value || 'dt_downloads';
   applyConsoleProfile();
+  await skinAppearance.reload(settings.uiLayout);
   updateOracleMode();
   window.saveTransfer.version().then((version) => {
     controls.appVersion.textContent = `v${version}`;
@@ -751,7 +831,7 @@ controls.downloadSelectedBtn.addEventListener('click', () => startDownload([...s
 controls.selectAllEntries.addEventListener('change', () => {
   selectedEntryIds.clear();
   if (controls.selectAllEntries.checked) {
-    for (const entry of availableEntries) selectedEntryIds.add(entry.id);
+    for (const entry of (cmpLayout.active ? cmpLayout.visibleRemoteEntries() : availableEntries)) selectedEntryIds.add(entry.id);
   }
   renderEntries();
 });
@@ -842,6 +922,7 @@ window.saveTransfer.onEvent((event) => {
       if (entry.downloaded) downloadedEntryIds.add(entry.id);
     }
     renderEntries();
+    refreshCmpFiles();
   }
   if (event.type === 'ready') {
     browseSessionActive = true;
@@ -853,6 +934,7 @@ window.saveTransfer.onEvent((event) => {
     busy(false);
   }
   if (event.type === 'downloaded') {
+    refreshCmpFiles();
     for (const id of event.entryIds || requestedDownloadIds) downloadedEntryIds.add(id);
     controls.metadata.value = folderPaths.metadataPath(options().output, 'metadata.db');
     status(event.message);
@@ -918,6 +1000,7 @@ async function addExternalUpload(folder = false) {
   option.selected = true;
   const title = image.toUpperCase().match(/PPSA[0-9]{5}/);
   controls.externalTitleId.value = title ? title[0] : '';
+  renderCmpUpload();
   status('External save added. Check the PPSA title ID and destination user, then click Upload.');
 }
 controls.addExternalSaveBtn.addEventListener('click', () => addExternalUpload(false));

@@ -4,6 +4,7 @@ import sqlite3
 import struct
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,14 +42,12 @@ class OtherUploadTests(unittest.TestCase):
         (assets / "296" / "manifest.json").write_text(json.dumps(manifest))
         (assets / "296" / "app.pkg").write_bytes(b"pkg-data")
         source = root / "source.db"
-        db = sqlite3.connect(source)
-        db.execute(
-            "CREATE TABLE dir_entry_info_tbl (id, path, partition, target_type, target_subtype, "
-            "title_id, content_id, actual_size, transfer_size, required_size, required_zone_size)"
-        )
-        db.execute("INSERT INTO dir_entry_info_tbl VALUES (296, ?, 1, 1, 0, '', '', 8, 8, 8, 0)", ("/user/app/PPSA05688/",))
-        db.commit()
-        db.close()
+        with closing(sqlite3.connect(source)) as db, db:
+            db.execute(
+                "CREATE TABLE dir_entry_info_tbl (id, path, partition, target_type, target_subtype, "
+                "title_id, content_id, actual_size, transfer_size, required_size, required_zone_size)"
+            )
+            db.execute("INSERT INTO dir_entry_info_tbl VALUES (296, ?, 1, 1, 0, '', '', 8, 8, 8, 0)", ("/user/app/PPSA05688/",))
         return root, assets, source
 
     def test_other_metadata_and_send_time_resize(self):
@@ -68,7 +67,7 @@ class OtherUploadTests(unittest.TestCase):
                  patch.object(dt_source, "send_record") as send_record:
                 dt_source.send_save_chunks(None, None, None, 0, 2, 296)
             self.assertEqual(send_record.call_count, 3)
-            with sqlite3.connect(output) as db:
+            with closing(sqlite3.connect(output)) as db:
                 sizes = db.execute(
                     "SELECT actual_size, transfer_size, required_size FROM dir_entry_info_tbl"
                 ).fetchone()
