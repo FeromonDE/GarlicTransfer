@@ -91,3 +91,8 @@ Mascots remain invisible until their image load event. The reserved image
 space prevents name/alt-text flashes and layout jumps, including fallback
 loading. Unchanged loaded mascots stay visible on reload.
 This source matches the full-resources build from before the size cleanup.
+
+CI DEPENDENCIES
+The identity-check workflow installs locked development dependencies before
+testing. This includes jsdom for the skin and tree tests. Install scripts
+are skipped in that test job because the Electron binary is not needed.
