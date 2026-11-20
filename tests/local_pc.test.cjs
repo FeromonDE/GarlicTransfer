@@ -7,7 +7,7 @@ const { LocalPcStore } = require('../electron/local_pc.cjs');
 
 // Function Test Folder
 function fixture(t) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-local-pc-')));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-local-pc-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const saves = path.join(root, 'Saves');
   fs.mkdirSync(saves);
@@ -33,7 +33,7 @@ test('PC inventory separates source users and includes saves without a user', as
   const second = save(path.join(saves, 'UserTwo', 'PPSA12345'));
   const third = save(path.join(saves, 'PPSA54321'));
   const result = await store.setRoot(saves);
-  assert.equal(result.root, fs.realpathSync(saves));
+  assert.equal(result.root, fs.realpathSync.native(saves));
   assert.equal(result.active, true);
   assert.equal(result.entries.length, 3);
   assert.equal(new Set(result.entries.map((entry) => entry.id)).size, 3);
@@ -90,7 +90,7 @@ test('PC folder and active selection persist without depending on transfer metad
   await store.setRoot(saves);
   await store.setActive(false);
   const restored = await new LocalPcStore(settings).inventory();
-  assert.equal(restored.root, fs.realpathSync(saves));
+  assert.equal(restored.root, fs.realpathSync.native(saves));
   assert.equal(restored.active, false);
   assert.equal(restored.entries.length, 1);
   const reactivated = new LocalPcStore(settings);

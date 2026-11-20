@@ -8,7 +8,7 @@ const { LocalPcStore } = require('../electron/local_pc.cjs');
 
 // Function Test Folder
 function fixture(t) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-pc-scan-')));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-pc-scan-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const saves = path.join(root, 'Saves');
   fs.mkdirSync(saves);
@@ -49,17 +49,36 @@ test('saved Local PC status does not scan or touch the selected drive', { concur
   await store.setRoot(saves);
   await store.setActive(false);
   const restored = new LocalPcStore(settings);
-  assert.deepEqual(await restored.status(), { root: fs.realpathSync(saves), active: false, warnings: [] });
+  assert.deepEqual(await restored.status(), { root: fs.realpathSync.native(saves), active: false, warnings: [] });
   const original = {};
   for (const name of ['readdir', 'lstat', 'stat', 'realpath', 'readFile']) {
     original[name] = fsp[name];
     fsp[name] = async () => { throw new Error(`status must not call ${name}`); };
   }
   try {
-    assert.deepEqual(await restored.status(), { root: fs.realpathSync(saves), active: false, warnings: [] });
+    assert.deepEqual(await restored.status(), { root: fs.realpathSync.native(saves), active: false, warnings: [] });
   } finally {
     for (const [name, method] of Object.entries(original)) fsp[name] = method;
   }
+});
+
+test('native selected paths match filesystem fault-injection targets', { concurrency: false }, async t => {
+  const { saves, store } = fixture(t);
+  const selected = save(path.join(saves, 'PPSA12345'));
+  const { entries, root } = await store.setRoot(saves);
+  assert.equal(root, saves);
+  assert.equal(root, await fsp.realpath(saves));
+  assert.equal(selected, await fsp.realpath(selected));
+  const original = fsp.lstat;
+  const failure = Object.assign(new Error('native-path validation failure'), { code: 'EACCES' });
+  let calls = 0;
+  fsp.lstat = async (file, ...args) => {
+    if (file === selected) { calls++; throw failure; }
+    return original(file, ...args);
+  };
+  try { await assert.rejects(store.file(entries[0].id, 'DATA')); }
+  finally { fsp.lstat = original; }
+  assert.equal(calls, 1);
 });
 
 test('selected save operations skip unrelated titles and source users', { concurrency: false }, async t => {

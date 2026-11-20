@@ -8,7 +8,7 @@ const { LocalPcStore } = require('../electron/local_pc.cjs');
 
 // Function Test Folder
 async function fixture(t) {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-pc-copy-')));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'garlic-pc-copy-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const saves = path.join(root, 'Saves');
   const folder = path.join(saves, 'PPSA12345');
