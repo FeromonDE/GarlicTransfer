@@ -1,6 +1,38 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Function Account Bridge
+contextBridge.exposeInMainWorld('saveAccounts', {
+  getState: () => ipcRenderer.invoke('accounts:get'),
+  add: (id, name = '') => ipcRenderer.invoke('accounts:add', id, name),
+  rename: (id, name) => ipcRenderer.invoke('accounts:rename', id, name),
+  remove: id => ipcRenderer.invoke('accounts:remove', id),
+  select: id => ipcRenderer.invoke('accounts:select', id),
+  setDisplayMode: mode => ipcRenderer.invoke('accounts:display-mode', mode),
+  setUseCurrent: value => ipcRenderer.invoke('accounts:use-current', value),
+  onBeforeClose: (flush, resume) => {
+    if (typeof flush !== 'function' || typeof resume !== 'function') throw new TypeError('Account close callbacks are required.');
+    const listener = async (_event, token) => {
+      if (typeof token !== 'string' || token.length > 128) return;
+      try {
+        await flush();
+        ipcRenderer.send('accounts:flushed', token, { ok: true });
+      } catch (error) {
+        ipcRenderer.send('accounts:flushed', token, { ok: false, error: String(error?.message || 'Could not save account names.').slice(0, 2048) });
+      }
+    };
+    const canceled = () => resume();
+    ipcRenderer.on('accounts:flush', listener);
+    ipcRenderer.on('accounts:close-cancelled', canceled);
+    ipcRenderer.send('accounts:ready');
+    return () => {
+      ipcRenderer.removeListener('accounts:flush', listener);
+      ipcRenderer.removeListener('accounts:close-cancelled', canceled);
+    };
+  },
+});
+
 contextBridge.exposeInMainWorld('saveTransfer', {
+  confirm: (message) => ipcRenderer.invoke('app:confirm', message),
   getSkins: () => ipcRenderer.invoke('skins:list'),
   getSkinMascot: (id) => ipcRenderer.invoke('skins:mascot', id),
   openSkinsFolder: () => ipcRenderer.invoke('skins:open'),
@@ -22,6 +54,12 @@ contextBridge.exposeInMainWorld('saveTransfer', {
   inventory: (metadataPath) => ipcRenderer.invoke('transfer:inventory', metadataPath),
   localSaves: (assets) => ipcRenderer.invoke('local:inventory', assets),
   localProfiles: (assets) => ipcRenderer.invoke('local:profiles', assets),
+  localPcState: () => ipcRenderer.invoke('local-pc:state'),
+  localPcInventory: () => ipcRenderer.invoke('local-pc:inventory'),
+  chooseLocalPcFolder: () => ipcRenderer.invoke('local-pc:choose-folder'),
+  setLocalPcActive: (selected) => ipcRenderer.invoke('local-pc:active', selected),
+  prepareLocalPcUpload: (options) => ipcRenderer.invoke('local-pc:prepare-upload', options),
+  releaseLocalPcUpload: (id) => ipcRenderer.invoke('local-pc:release-upload', id),
   exportLocalSave: (options) => ipcRenderer.invoke('local:export', options),
   importLocalSave: (options) => ipcRenderer.invoke('local:import', options),
   discover: (options) => ipcRenderer.invoke('transfer:discover', options),
@@ -38,6 +76,7 @@ contextBridge.exposeInMainWorld('saveTransfer', {
 });
 
 contextBridge.exposeInMainWorld('saveEditor', {
+  cancel: () => ipcRenderer.invoke('save-editor:cancel'),
   chooseInput: () => ipcRenderer.invoke('save-editor:choose-input'),
   chooseWorkspace: () => ipcRenderer.invoke('save-editor:choose-workspace'),
   chooseOutput: (defaultPath) => ipcRenderer.invoke('save-editor:choose-output', defaultPath),
@@ -53,6 +92,7 @@ contextBridge.exposeInMainWorld('saveEditor', {
   downloadArchive: (archivePath) => ipcRenderer.invoke('save-editor:download-archive', { archivePath }),
   show: (path) => ipcRenderer.invoke('save-editor:show', path),
   run: (options) => ipcRenderer.invoke('save-editor:job', options),
+  releaseTemporary: (id) => ipcRenderer.invoke('save-editor:release-temporary', id),
   onEvent: (callback) => {
     const listener = (_event, detail) => callback(detail);
     ipcRenderer.on('save-editor:event', listener);

@@ -222,10 +222,15 @@
                   </label>
                 </div>
                 <div class="button-row">
+                  <button id="chooseLocalPcFolderBtn" class="secondary" type="button" hidden>Browse folder…</button>
                   <button id="refreshMySavesBtn" class="secondary" type="button">Refresh</button>
-                  <button id="decryptExternalBtn" class="secondary" type="button">Decrypt another save…</button>
+                  <div id="decryptExternalDropZone" class="decrypt-drop-zone" title="Choose a save, or drop one encrypted save ZIP here.">
+                    <button id="decryptExternalBtn" class="secondary" type="button" aria-describedby="decryptExternalDropHint">Decrypt another save…</button>
+                    <span id="decryptExternalDropHint" class="hint">or drop one encrypted ZIP here</span>
+                  </div>
                 </div>
               </div>
+              <p id="localPcFolderLabel" class="hint" hidden></p>
               <div id="cmpLibraryTree" class="cmp-only"></div>
               <div class="library-heading">
                 <button id="mySavesBackBtn" class="secondary" type="button" hidden>← All titles</button>
@@ -281,9 +286,19 @@
           <div class="wizard-panel" data-wizard="2">
             <section id="workspacePanel" class="card workspace-card">
               <div class="workspace-header">
-                <div>
+                <div class="workspace-heading">
                   <h2>Edit your save</h2>
                   <p id="workspaceSummary" class="hint"></p>
+                  <div id="workspaceAccountControls" class="workspace-account-controls">
+                    <p class="workspace-current-account hint">Current account <span id="workspaceAccountId">Not available</span></p>
+                    <label class="workspace-use-current checkbox"><input id="useCurrentAccountId" type="checkbox" checked> Use current ID</label>
+                    <label class="workspace-target-account">Target account
+                      <select id="targetAccountSelect" aria-label="Target account for encrypt and resign" disabled>
+                        <option value="">Choose account…</option>
+                      </select>
+                    </label>
+                    <button id="addCurrentAccountBtn" type="button">Add current ID</button>
+                  </div>
                 </div>
                 <div class="workspace-toolbar">
                   <button id="encryptSaveBtn" class="btn-primary" type="button">Save &amp; encrypt</button>
@@ -377,12 +392,34 @@
           <h3>Oracle</h3>
           <label class="checkbox"><input id="useRemoteOracle" type="checkbox" checked> Use remote oracle (no jailbroken console needed)</label>
           <p class="card-hint">Volunteer-run workers derive your save encryption keys. Default server key included &mdash; change only if you have your own.</p>
+          <p class="card-hint">This choice also applies to Encrypt, Decrypt and Resign. Turn it off to use your jailbroken PS5 at the local oracle IP.</p>
           <div class="settings-grid">
             <label>Server URL<input id="serverUrl" value="https://garlicsaves.com" spellcheck="false"></label>
             <label>Server key<input id="workerKey" type="password" placeholder="Pre-filled — change only if you have your own" spellcheck="false"></label>
             <label>Local oracle IP (when remote is off)<input id="oracleHost" value="192.168.0.125" spellcheck="false"></label>
           </div>
         </div>
+
+        <details id="accountListDetails" class="card account-list-card">
+          <summary class="card-toggle">Saved accounts</summary>
+          <div class="account-list-content">
+            <p class="card-hint">The selected target account applies to Encrypt and Resign. Use current ID keeps the save's current account. Names save automatically as you type.</p>
+            <label class="saved-account-display">Show saved accounts as
+              <select id="savedAccountDisplay">
+                <option value="name">Display name</option>
+                <option value="id">Account ID</option>
+              </select>
+            </label>
+            <div class="table-wrap saved-account-table" role="region" aria-label="Saved account list" tabindex="0">
+              <table aria-label="Saved accounts">
+                <thead><tr><th scope="col">Account ID</th><th scope="col">Name</th><th scope="col">Remove</th></tr></thead>
+                <tbody id="savedAccountRows"></tbody>
+              </table>
+            </div>
+            <p id="savedAccountEmpty" class="hint">No saved accounts yet. Use Add current ID in the save editor.</p>
+            <p id="savedAccountStatus" class="hint" role="status" aria-live="polite"></p>
+          </div>
+        </details>
 
         <details class="card">
           <summary class="card-toggle">Advanced connection settings</summary>
@@ -420,6 +457,21 @@
     </div>
   </div>
 
+  <dialog id="accountNameDialog" class="modal account-name-modal" aria-labelledby="accountNameHeading" aria-describedby="accountNameDescription">
+    <form id="accountNameForm">
+      <h2 id="accountNameHeading">Add account</h2>
+      <p id="accountNameDescription" class="modal-hint">Choose a display name for this account.</p>
+      <p class="account-name-current">Account ID: <span id="accountNameId"></span></p>
+      <label>Name
+        <input id="accountNameInput" name="accountName" maxlength="64" autocomplete="off" spellcheck="false" placeholder="Account name" autofocus>
+      </label>
+      <p id="accountNameError" class="account-name-error" role="status" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button id="accountNameSaveBtn" class="btn-primary" type="submit">Save</button>
+        <button id="accountNameCancelBtn" type="button">Cancel</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="powerModal" class="modal">
     <h2>Console action required</h2>
     <p>Press power button until it beeps and release</p>
@@ -457,6 +509,7 @@
   <script src="tree_bridge.js"></script>
   <script src="skin_appearance.js"></script>
   <script src="renderer.js"></script>
+  <script src="accounts_ui.js"></script>
   <script src="my_saves.js"></script>
 </body>
 </html>

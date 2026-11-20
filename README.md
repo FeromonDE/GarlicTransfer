@@ -65,7 +65,7 @@ Open **Settings** in the app and choose **Save settings** to create `config.ini`
 Oracle choices:
 
 - **Volunteer workers:** enter the HTOS server URL and a worker/API key from the server's Contribute page. The server must support `ppr_derive`; the corresponding worker implementation is in garlic-worker 1.1.7 or newer.
-- **Local oracle:** disable volunteer workers and enter the jailbroken console's address. GarlicTransfer can deploy the included `poc/ncdt_oracle/ncdt_oracle_server.elf` through the console's payload listener on port 9021. The oracle listens on port 9022.
+- **Local oracle:** disable volunteer workers and enter the jailbroken PS5's IPv4 address. GarlicTransfer deploys `poc/local_worker/garlic-local-worker.elf` through the console's payload listener on port 9021 when needed. The combined helper provides transfer keys on port 9022 and local decrypt, encrypt and resign jobs on port 9023. See [LOCAL-WORKER.md](LOCAL-WORKER.md) for setup.
 
 ### Get a volunteer worker token
 

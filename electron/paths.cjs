@@ -8,7 +8,7 @@ const resourceRoot = packaged
 
 const pythonDir = path.join(resourceRoot, 'poc');
 const dataDir = path.join(resourceRoot, 'data');
-const oracleElf = path.join(pythonDir, 'ncdt_oracle', 'ncdt_oracle_server.elf');
+const localWorkerElf = path.join(pythonDir, 'local_worker', 'garlic-local-worker.elf');
 
 // Python cwd must be writable and outside the asar virtual FS.
 // resourcesPath on Windows contains app.asar — mkdir there throws FileExistsError.
@@ -31,4 +31,4 @@ function pythonBin() {
   return 'python3';
 }
 
-module.exports = { resourceRoot, pythonDir, dataDir, oracleElf, workDir, defaultDownloads, pythonBin, packaged };
+module.exports = { resourceRoot, pythonDir, dataDir, localWorkerElf, workDir, defaultDownloads, pythonBin, packaged };
