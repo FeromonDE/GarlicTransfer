@@ -1,27 +1,15 @@
 import socket
 import struct
 import threading
-import time
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, call, patch
 
 from poc import dt_source
 
 
-def _udp_exchange(port, payload, timeout=5.0):
-    deadline = time.monotonic() + timeout
-    client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    client.settimeout(0.2)
-    try:
-        while time.monotonic() < deadline:
-            client.sendto(payload, ("127.0.0.1", port))
-            try:
-                data, _ = client.recvfrom(4096)
-                return data
-            except socket.timeout:
-                continue
-        raise TimeoutError(f"no UDP response within {timeout} seconds")
-    finally:
-        client.close()
+class _PacketsComplete(Exception):
+    pass
 
 
 class AddressHelperTests(unittest.TestCase):
@@ -65,27 +53,46 @@ class DiscoveryReplyTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self._saved_address = dt_source.DATA_ADDRESS
-        self._saved_pinned = dt_source.ADDRESS_PINNED
-        self._saved_version = dt_source.SYSTEM_VERSION
-        self._saved_host_name = dt_source.HOST_NAME
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(("127.0.0.1", 0))
-        self.port = self.sock.getsockname()[1]
-        self.sock.close()
-        self.thread = threading.Thread(target=dt_source.discovery_server,
-                                       args=(self.port,), daemon=True)
-        self.thread.start()
+        state = patch.multiple(dt_source,
+                               DATA_ADDRESS=dt_source.packed_address("192.0.2.1"),
+                               ADDRESS_PINNED=False,
+                               SYSTEM_VERSION=b"14200007",
+                               HOST_NAME=b"GarlicTransfer")
+        state.start()
+        self.addCleanup(state.stop)
 
-    def tearDown(self):
-        dt_source.DATA_ADDRESS = self._saved_address
-        dt_source.ADDRESS_PINNED = self._saved_pinned
-        dt_source.SYSTEM_VERSION = self._saved_version
-        dt_source.HOST_NAME = self._saved_host_name
+    # Function Discovery Replies
+    def replies(self, *payloads):
+        peer = ("127.0.0.1", 53000)
+        transport = Mock()
+        transport.recvfrom.side_effect = [(payload, peer) for payload in payloads] + [_PacketsComplete()]
+        network = SimpleNamespace(
+            AF_INET=socket.AF_INET, AF_INET6=socket.AF_INET6,
+            SOCK_DGRAM=socket.SOCK_DGRAM, SOL_SOCKET=socket.SOL_SOCKET,
+            SO_REUSEADDR=socket.SO_REUSEADDR,
+            socket=Mock(return_value=transport))
+        expected_probes = sum(not dt_source.ADDRESS_PINNED and
+                              payload.split(b" ", 1)[0] in (b"SRCH", b"LAUNCH4")
+                              for payload in payloads)
+        with patch.object(dt_source, "socket", network), \
+             patch.object(dt_source, "local_ipv4_toward", return_value=peer[0]) as detect:
+            with self.assertRaises(_PacketsComplete):
+                dt_source.discovery_server(1006)
+        network.socket.assert_called_once_with(socket.AF_INET, socket.SOCK_DGRAM)
+        transport.setsockopt.assert_called_once_with(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        transport.bind.assert_called_once_with(("0.0.0.0", 1006))
+        self.assertEqual(detect.call_args_list, [call(peer[0])] * expected_probes)
+        responses = []
+        for sent in transport.sendto.call_args_list:
+            response, destination = sent.args
+            self.assertEqual(destination, peer)
+            self.assertIsInstance(response, bytes)
+            responses.append(response)
+        return responses
 
     def test_srch_reply_shape(self):
-        reply = _udp_exchange(self.port, b"SRCH * HTTP/1.1\n"
-                                         b"device-discovery-protocol-version:00030000\n")
+        reply, = self.replies(b"SRCH * HTTP/1.1\n"
+                              b"device-discovery-protocol-version:00030000\n")
         text = reply.decode()
         self.assertTrue(text.startswith("HTTP/1.1 200 Ok\n"), text)
         for field in ("host-id:", "host-request-port:", "host-type:PS5",
@@ -94,19 +101,19 @@ class DiscoveryReplyTests(unittest.TestCase):
             self.assertIn(field, text)
         # only LAUNCH4 carries host-address, as in the captures
         self.assertNotIn("host-address:", text)
-        # the discovery thread must have adopted the interface the peer came in on
+        # The reply must use the interface detected for its peer.
         self.assertTrue(dt_source.DATA_ADDRESS.endswith(bytes((127, 0, 0, 1))),
                         dt_source.DATA_ADDRESS.hex())
 
     def test_srch_uses_the_configured_display_name(self):
         dt_source.HOST_NAME = b"Living Room PC"
-        reply = _udp_exchange(self.port, b"SRCH * HTTP/1.1\n")
+        reply, = self.replies(b"SRCH * HTTP/1.1\n")
         self.assertIn(b"host-name:Living Room PC\n", reply)
 
     def test_launch4_advertises_our_own_address(self):
-        _udp_exchange(self.port, b"SRCH * HTTP/1.1\n")
-        reply = _udp_exchange(self.port, b"LAUNCH4 * HTTP/1.1\n"
-                                         b"device-discovery-protocol-version:00030000\n")
+        _, reply = self.replies(b"SRCH * HTTP/1.1\n",
+                                b"LAUNCH4 * HTTP/1.1\n"
+                                b"device-discovery-protocol-version:00030000\n")
         text = reply.decode()
         fields = dict(
             line.split(":", 1) for line in text.splitlines()[1:] if ":" in line
@@ -123,22 +130,16 @@ class DiscoveryReplyTests(unittest.TestCase):
     def test_pinned_address_is_not_overridden_by_detection(self):
         dt_source.ADDRESS_PINNED = True
         dt_source.DATA_ADDRESS = dt_source.packed_address("10.9.8.7")
-        reply = _udp_exchange(self.port, b"LAUNCH4 * HTTP/1.1\n")
+        reply, = self.replies(b"LAUNCH4 * HTTP/1.1\n")
         fields = dict(line.split(":", 1) for line in reply.decode().splitlines()[1:]
                       if ":" in line)
         self.assertEqual(fields.get("host-address"), "00000000000000000000ffff0a090807")
 
     def test_unknown_verbs_are_ignored(self):
-        client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        client.settimeout(1.0)
-        try:
-            client.sendto(b"WAKEUP * HTTP/1.1\n", ("127.0.0.1", self.port))
-            with self.assertRaises((TimeoutError, socket.timeout)):
-                client.recvfrom(4096)
-        finally:
-            client.close()
-        # and the server is still alive afterwards
-        self.assertIn(b"200 Ok", _udp_exchange(self.port, b"SRCH * HTTP/1.1\n"))
+        # Only SRCH replies, and it is processed after the ignored datagram.
+        reply, = self.replies(b"WAKEUP * HTTP/1.1\n", b"SRCH * HTTP/1.1\n")
+        self.assertIn(b"200 Ok", reply)
+        self.assertIn(b"host-type:PS5\n", reply)
 
 
 class DisplayNameConfigurationTests(unittest.TestCase):
@@ -196,8 +197,8 @@ class OracleConfigurationTests(unittest.TestCase):
                     os.environ[k] = v
 
     def test_console_info_carries_the_detected_address(self):
-        dt_source.DATA_ADDRESS = dt_source.packed_address("192.168.5.44")
-        body = dt_source.console_info(3, 0x290, b"np", 0x13600007, 0x13600007)
+        with patch.object(dt_source, "DATA_ADDRESS", dt_source.packed_address("192.168.5.44")):
+            body = dt_source.console_info(3, 0x290, b"np", 0x13600007, 0x13600007)
         self.assertEqual(len(body), 72)
         self.assertEqual(body[:6], bytes.fromhex(dt_source.HOST_ID.decode()))
         self.assertEqual(body[48:64], bytes.fromhex("00000000000000000000ffffc0a8052c"))
