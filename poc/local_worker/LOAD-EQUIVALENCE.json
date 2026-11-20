@@ -1,0 +1,69 @@
+{
+  "baseline_source_archive": "GarlicTransfer-main-Local-Oracle-Test1-Source.zip",
+  "baseline_binary_entry": "poc/local_worker/garlic-local-worker.elf",
+  "baseline_sha256": "1e55999186c0d9ae397c7f766744872f42b984b55b3f507f9418ed163c79e8d2",
+  "candidate_sha256": "c4729cc23228e9392cdf30a550817b24fa66880600ec1a74154d7015bd2e08ad",
+  "baseline_bytes": 245888,
+  "candidate_bytes": 214280,
+  "baseline_trailer": 32848,
+  "candidate_trailer": 1240,
+  "entrypoint": "0x12cdc",
+  "all_program_headers_identical": true,
+  "all_allocated_section_content_and_metadata_identical_except_name_table_offsets": [
+    ".text",
+    ".eh_frame_hdr",
+    ".eh_frame",
+    ".dynsym",
+    ".gnu.hash",
+    ".dynstr",
+    ".rela.dyn",
+    ".data.rel.ro",
+    ".got",
+    ".rodata",
+    ".init_array",
+    ".fini_array",
+    ".dynamic",
+    ".data",
+    ".bss"
+  ],
+  "load_segments": [
+    {
+      "index": 0,
+      "type": "PT_LOAD",
+      "offset": 16384,
+      "bytes": 113846,
+      "sha256": "406564302111aed0b9004d364def39c30da4d4cd170644dcdddcecd3c94d6cb9"
+    },
+    {
+      "index": 1,
+      "type": "PT_LOAD",
+      "offset": 131072,
+      "bytes": 65936,
+      "sha256": "27e10954bef9a23424d5cc2e4914b92e5a390db7ed50933c7c3eb6b81183f4a0"
+    },
+    {
+      "index": 2,
+      "type": "PT_LOAD",
+      "offset": 212992,
+      "bytes": 48,
+      "sha256": "e9b4d66dfb852d54427d7f39f33d422bf431b55882842e066e557fc373a529f0"
+    },
+    {
+      "index": 3,
+      "type": "PT_DYNAMIC",
+      "offset": 196608,
+      "bytes": 400,
+      "sha256": "2fbd5a619290c35f7254c4956ff2657700ca0fad50b59845ba491442c3e97c0a"
+    }
+  ],
+  "all_C_sources_identical_to_Test1": true,
+  "makefile_reproduced_candidate_byte_for_byte": true,
+  "portable_strip_command": "${PS5_PAYLOAD_SDK}/bin/prospero-strip --strip-all garlic-local-worker.elf",
+  "removed_sections": [
+    ".comment",
+    ".llvm_jump_table_sizes",
+    ".strtab",
+    ".symtab"
+  ],
+  "compatibility_hypothesis": "Reduced non-runtime trailing metadata may help loaders that stop reading after load segments; this is not a confirmed cause of the reported timeout."
+}

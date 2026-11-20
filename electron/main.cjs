@@ -11,12 +11,23 @@ const { loadSettings, saveSettings } = require('./config.cjs');
 const { titleName } = require('./titles.cjs');
 const { pairingPrefixPath, existingPairingPrefix } = require('./pairing_store.cjs');
 const { registerSaveEditor } = require('./save_editor.cjs');
+const { LocalPcStore } = require('./local_pc.cjs');
+const { LocalHelper } = require('./local_helper.cjs');
 const { recordConsoleNames } = require('./console_names.cjs');
-const { resourceRoot, oracleElf, workDir, pythonBin } = require('./paths.cjs');
+const { resourceRoot, localWorkerElf, workDir, pythonBin } = require('./paths.cjs');
 let window;
 let active = null;
-let oracle = null;
 let oracleRelay = null;
+const localPcRoot = path.join(app.getPath('userData'), 'local-pc');
+const pcStore = new LocalPcStore({
+  stateFile: path.join(app.getPath('userData'), 'local-pc.json'),
+  backupRoot: path.join(localPcRoot, 'backups'),
+  stagingRoot: path.join(localPcRoot, 'staging'),
+});
+const localHelper = new LocalHelper({
+  elfPath: localWorkerElf,
+  onLog: message => send('log', { message }),
+});
 
 function send(type, detail = {}) {
   if (type === 'entries' && Array.isArray(detail.entries)) {
@@ -31,33 +42,20 @@ function send(type, detail = {}) {
 }
 
 function stopOracle() {
-  if (oracle && !oracle.destroyed) oracle.end();
-  oracle = null;
   stopRemoteOracle(oracleRelay);
   oracleRelay = null;
 }
 
-function oracleReady(host, port) {
-  return new Promise((resolve) => {
-    const sock = net.createConnection({ host, port, timeout: 1200 });
-    const done = (ready) => {
-      sock.destroy();
-      resolve(ready);
-    };
-    sock.once('connect', () => done(true));
-    sock.once('timeout', () => done(false));
-    sock.once('error', () => done(false));
-  });
-}
-
-async function ensureOracle(options) {
+async function ensureOracle(options, session) {
   if (options.useRemoteOracle) {
     if (!options.workerKey) throw new Error('no server key set — check Oracle settings or disable the remote oracle');
-    oracleRelay = await startRemoteOracle({
+    const relay = await startRemoteOracle({
       serverUrl: options.serverUrl,
       workerKey: options.workerKey,
-      onLog: (message) => send('log', { message }),
+      onLog: (message) => { if (!session || active === session) send('log', { message }); },
     });
+    if (session && active !== session) { stopRemoteOracle(relay); return; }
+    oracleRelay = relay;
     options.oracleHost = '127.0.0.1';
     options.oraclePort = oracleRelay.port;
     send('log', { message: `[oracle] using volunteer workers through ${options.serverUrl}` });
@@ -66,38 +64,30 @@ async function ensureOracle(options) {
 
   const host = options.oracleHost;
   const port = Number(options.oraclePort || 9022);
-  if (await oracleReady(host, port)) {
-    send('log', { message: `[oracle] using ${host}:${port}` });
-    return;
-  }
-  if (oracle && !oracle.destroyed) {
-    throw new Error('oracle listener is starting but not ready');
-  }
-  send('log', { message: `[oracle] deploying to ${host}:9021` });
-  oracle = net.createConnection({ host, port: 9021 });
-  oracle.on('error', (error) => send('log', { message: `[oracle] connection error: ${error.message}` }));
-  oracle.on('data', (data) => send('log', { message: String(data).trim() }));
-  fs.createReadStream(oracleElf).pipe(oracle);
-  const deadline = Date.now() + 8000;
-  while (Date.now() < deadline) {
-    if (await oracleReady(host, port)) {
-      send('log', { message: '[oracle] ready' });
-      return;
-    }
-    if (oracle.destroyed) throw new Error('oracle payload exited before opening port 9022');
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  throw new Error('oracle did not open port 9022; check the jailbroken console');
+  await localHelper.ensureTransfer(host, port);
+  send('log', { message: `[oracle] using ${host}:${port}` });
+}
+
+// Function Upload Cleanup
+function releaseUploadSession(session) {
+  if (!session || !session.releaseStage || session.preparing ||
+      (session.process && !session.processClosed) || (session.metadataProcess && !session.metadataClosed)) return;
+  const release = session.releaseStage;
+  session.releaseStage = null;
+  release().catch(error => send('log', { message: `[local] Upload cleanup: ${error.message}` }));
 }
 
 function stopActive() {
   const session = active;
   active = null;
+  if (session) session.canceled = true;
   if (session && session.powerTimer) clearTimeout(session.powerTimer);
+  if (session && session.metadataProcess && !session.metadataClosed) session.metadataProcess.kill();
   if (session && session.process && session.process.exitCode === null) {
     if (session.kind === 'upload' && session.process.stdin.writable) session.process.stdin.end();
     session.process.kill();
   }
+  releaseUploadSession(session);
   stopOracle();
 }
 
@@ -116,43 +106,45 @@ function startDownload(options) {
     startPairing(options);
     return;
   }
-  active = { kind: 'download', completed: false, awaitingSelection: false, process: null };
+  const session = { kind: 'download', completed: false, awaitingSelection: false, process: null };
+  active = session;
   (async () => {
-    await ensureOracle(options);
+    await ensureOracle(options, session);
+    if (active !== session) return;
     const child = spawn(pythonBin(), ['-u', '-m', 'poc.dt_backend', 'download', '-'], {
       cwd: workDir,
       env: { ...process.env, PYTHONPATH: resourceRoot },
     });
-    active.process = child;
+    session.process = child;
     child.stdin.write(`${JSON.stringify(options)}\n`);
     let buffer = '';
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
-      while (active && buffer.includes('\n')) {
+      while (active === session && buffer.includes('\n')) {
         const index = buffer.indexOf('\n');
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
         if (!line) continue;
         try {
           const event = JSON.parse(line);
-          if (event.type === 'done') active.completed = true;
-          if (event.type === 'ready') active.awaitingSelection = true;
+          if (event.type === 'done') session.completed = true;
+          if (event.type === 'ready') session.awaitingSelection = true;
           send(event.type, event);
         } catch {
           send('log', { message: line });
         }
       }
     });
-    child.stderr.on('data', (data) => send('log', { message: String(data).trim() }));
-    child.on('error', (error) => finish(error));
+    child.stderr.on('data', (data) => { if (active === session) send('log', { message: String(data).trim() }); });
+    child.on('error', (error) => finish(error, session));
     child.on('close', (code) => {
-      if (active && active.kind === 'download' && !active.completed && code !== 0) {
-        finish(new Error(`download backend exited with status ${code}`));
+      if (active === session && !session.completed && code !== 0) {
+        finish(new Error(`download backend exited with status ${code}`), session);
       } else {
-        finish();
+        finish(undefined, session);
       }
     });
-  })().catch((error) => finish(error));
+  })().catch((error) => finish(error, session));
 }
 
 function startPairing(options) {
@@ -164,7 +156,7 @@ function startPairing(options) {
   const session = active;
   send('pairingStarted');
   (async () => {
-    await ensureOracle(options);
+    await ensureOracle(options, session);
     if (active !== session) {
       if (!active) stopOracle();
       return;
@@ -200,7 +192,7 @@ function startPairing(options) {
     let buffer = '';
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
-      while (active && buffer.includes('\n')) {
+      while (active === session && buffer.includes('\n')) {
         const index = buffer.indexOf('\n');
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
@@ -222,22 +214,23 @@ function startPairing(options) {
       }
     });
     child.stderr.on('data', (data) => {
+      if (active !== session) return;
       send('log', { message: `[helper] ${String(data).trim()}` });
       session.error ||= 'Pairing helper failed';
     });
     child.on('error', (error) => {
-      if (active === session) finish(error);
+      if (active === session) finish(error, session);
     });
     child.on('close', (code) => {
       if (active !== session) return;
-      if (!session.completed || code !== 0) finish(new Error(session.error || `Pairing exited with status ${code}`));
+      if (!session.completed || code !== 0) finish(new Error(session.error || `Pairing exited with status ${code}`), session);
       else {
-        finish();
+        finish(undefined, session);
         send('paired', { message: 'Pairing saved for this PS5. Return to its home screen, then browse saves.' });
       }
     });
   })().catch((error) => {
-    if (active === session) finish(error);
+    if (active === session) finish(error, session);
   });
 }
 
@@ -339,7 +332,7 @@ function runLocalSaveOperation(command, args) {
 }
 
 // Build upload metadata.
-function createMetadata(options) {
+function createMetadata(options, session) {
   options.metadata = resolveMetadata(options.metadata, options.output);
   return new Promise((resolve, reject) => {
     fs.mkdirSync(metadataPath(options.output), { recursive: true });
@@ -365,11 +358,14 @@ function createMetadata(options) {
     const entryIds = Array.isArray(options.entryIds) ? options.entryIds : [];
     for (const entryId of entryIds) args.push('--entry-id', String(entryId));
     const child = spawn(pythonBin(), args, { cwd: workDir, env: { ...process.env, PYTHONPATH: resourceRoot } });
+    if (session) session.metadataProcess = child;
     let output = '';
     child.stdout.on('data', (data) => { output += data; });
     child.stderr.on('data', (data) => { output += data; });
     child.on('error', reject);
     child.on('close', (code) => {
+      if (session) { session.metadataClosed = true; releaseUploadSession(session); }
+      if (session && active !== session) return reject(new Error('Upload canceled.'));
       if (code !== 0) return reject(new Error(output.trim() || 'metadata generation failed'));
       options.metadata = generatedMetadata;
       options.uploadManifest = generatedManifest;
@@ -381,10 +377,14 @@ function createMetadata(options) {
 
 function startUpload(options) {
   if (active) throw new Error('another transfer is already running');
-  active = { kind: 'upload', completed: false, process: null };
+  const releaseStage = options.localPcUploadId ? pcStore.retainUpload(options.localPcUploadId, options.externalImage) : null;
+  const session = { kind: 'upload', completed: false, process: null, releaseStage, preparing: true };
+  active = session;
   (async () => {
-    await createMetadata(options);
-    await ensureOracle(options);
+    await createMetadata(options, session);
+    if (active !== session) return;
+    await ensureOracle(options, session);
+    if (active !== session) return;
     const prefixPath = pairingPrefixPath(app.getPath('userData'), options);
     fs.mkdirSync(path.dirname(prefixPath), { recursive: true, mode: 0o700 });
     const sourceEnvironment = {
@@ -436,11 +436,11 @@ function startUpload(options) {
       send('log', { message: '[privilege] authenticate to bind Data Transfer ports 1004–1006' });
     }
     const child = spawn(command, args, { cwd: workDir, env: environment });
-    active.process = child;
+    session.process = child;
     let buffer = '';
     child.stdout.on('data', (chunk) => {
       buffer += chunk;
-      while (active && buffer.includes('\n')) {
+      while (active === session && buffer.includes('\n')) {
         const index = buffer.indexOf('\n');
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
@@ -450,48 +450,55 @@ function startUpload(options) {
           send('status', { step: 3, message: 'Sending the source power signal automatically in 1 second.' });
         }
         if (line.toLowerCase().includes('cmd=0xb3')) {
-          active.transferFinished = true;
+          session.transferFinished = true;
           send('status', { step: 3, message: 'Save data sent. Waiting for the console to disconnect.' });
         }
         if (line.toLowerCase().includes('response complete cmd=0xb0')) {
-          active.rebootRequested = true;
+          session.rebootRequested = true;
           send('status', { step: 3, message: 'Reboot requested. Waiting for the console to reconnect for reboot authentication.' });
         }
-        if (active.rebootRequested && line.toLowerCase().includes('response complete cmd=0x93')) {
-          active.rebootAuthenticated = true;
+        if (session.rebootRequested && line.toLowerCase().includes('response complete cmd=0x93')) {
+          session.rebootAuthenticated = true;
           send('status', { step: 3, message: 'Reboot authentication acknowledged. Finishing the transfer.' });
         }
-        if (active.transferFinished && !active.rebootRequested && line.toLowerCase().includes('response complete cmd=0x94')) {
-          active.completed = true;
+        if (session.transferFinished && !session.rebootRequested && line.toLowerCase().includes('response complete cmd=0x94')) {
+          session.completed = true;
           send('done', { message: 'Save upload completed. The client may reboot to finish.' });
           stopActive();
           return;
         }
-        if (active.rebootAuthenticated && line.includes('[cmd] session ended:')) {
-          active.completed = true;
+        if (session.rebootAuthenticated && line.includes('[cmd] session ended:')) {
+          session.completed = true;
           send('done', { message: 'Save upload and reboot authentication completed.' });
           stopActive();
           return;
         }
       }
     });
-    child.stderr.on('data', (data) => send('log', { message: String(data).trim() }));
-    child.on('error', (error) => finish(error));
+    child.stderr.on('data', (data) => { if (active === session) send('log', { message: String(data).trim() }); });
+    child.on('error', (error) => finish(error, session));
     child.on('close', (code) => {
-      if (active && active.kind === 'upload' && active.transferFinished && !active.completed && code === 0) {
-        active.completed = true;
+      session.processClosed = true;
+      releaseUploadSession(session);
+      if (active !== session) return;
+      if (active === session && session.transferFinished && !session.completed && code === 0) {
+        session.completed = true;
         send('done', { message: 'Save upload completed. The console closed the transfer session.' });
       }
-      if (active && active.kind === 'upload' && !active.completed && code !== 0) {
-        finish(new Error(`source emulator exited with status ${code}`));
+      if (active === session && !session.completed && code !== 0) {
+        finish(new Error(`source emulator exited with status ${code}`), session);
       } else {
-        finish();
+        finish(undefined, session);
       }
     });
-  })().catch((error) => finish(error));
+  })().catch((error) => finish(error, session)).finally(() => {
+    session.preparing = false;
+    releaseUploadSession(session);
+  });
 }
 
-function finish(error) {
+function finish(error, session = active) {
+  if (active !== session) return;
   const current = active;
   stopActive();
   if (error) send('error', { message: error.message });
@@ -517,6 +524,7 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', stopActive);
+app.on('before-quit', () => localHelper.stop());
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
@@ -578,14 +586,44 @@ ipcMain.handle('transfer:users', (_event, metadataPath) => getUsers(metadataPath
 ipcMain.handle('transfer:inventory', (_event, metadataPath) => getInventory(metadataPath));
 ipcMain.handle('local:inventory', (_event, assets) => runLocalSaveOperation('list', [assets]));
 ipcMain.handle('local:profiles', (_event, assets) => runLocalSaveOperation('profiles', [assets]));
-ipcMain.handle('local:export', async (_event, { assets, entryId, filename }) => {
+
+// Function PC Loading
+function pcInventoryNames(result) {
+  return { ...result, entries: result.entries.map((entry) => ({ ...entry, name: titleName(entry.title) })) };
+}
+
+ipcMain.handle('local-pc:state', () => pcStore.status());
+ipcMain.handle('local-pc:inventory', async () => pcInventoryNames(await pcStore.inventory()));
+ipcMain.handle('local-pc:choose-folder', async () => {
+  if (active) throw new Error('stop the active transfer before choosing PC saves');
+  const result = await dialog.showOpenDialog(window, {
+    title: 'Choose PC saves folder',
+    properties: ['openDirectory'],
+  });
+  if (result.canceled) return null;
+  if (active) throw new Error('stop the active transfer before choosing PC saves');
+  return pcInventoryNames(await pcStore.setRoot(result.filePaths[0]));
+});
+ipcMain.handle('local-pc:active', async (_event, selected) => {
+  if (active) throw new Error('stop the active transfer before changing local saves');
+  return pcStore.setActive(Boolean(selected));
+});
+ipcMain.handle('local-pc:prepare-upload', (_event, { entryId }) => {
+  if (active) throw new Error('stop the active transfer before preparing PC saves');
+  return pcStore.prepareUpload(entryId);
+});
+ipcMain.handle('local-pc:release-upload', (_event, id) => pcStore.releaseUpload(id));
+
+ipcMain.handle('local:export', async (_event, { assets, entryId, filename, localSource }) => {
   if (active) throw new Error('stop the active transfer before exporting a local save');
   const result = await dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] });
   if (result.canceled) return null;
+  if (localSource === 'pc') return pcStore.export(entryId, filename, result.filePaths[0]);
   return runLocalSaveOperation('export', [assets, String(entryId), filename, result.filePaths[0]]);
 });
-ipcMain.handle('local:import', (_event, { assets, entryId, filename, source }) => {
+ipcMain.handle('local:import', (_event, { assets, entryId, filename, source, localSource }) => {
   if (active) throw new Error('stop the active transfer before replacing a local save');
+  if (localSource === 'pc') return pcStore.replace(entryId, filename, source);
   return runLocalSaveOperation('import', [assets, String(entryId), filename, source]);
 });
 ipcMain.handle('app:version', () => app.getVersion());
@@ -624,6 +662,8 @@ registerSaveEditor({
   python: pythonBin(),
   resourceRoot,
   workDir,
+  pcStore,
+  ensureLocalWorker: host => localHelper.ensure(host),
 });
 
 // Function Skin Folder

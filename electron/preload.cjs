@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld('saveTransfer', {
   inventory: (metadataPath) => ipcRenderer.invoke('transfer:inventory', metadataPath),
   localSaves: (assets) => ipcRenderer.invoke('local:inventory', assets),
   localProfiles: (assets) => ipcRenderer.invoke('local:profiles', assets),
+  localPcState: () => ipcRenderer.invoke('local-pc:state'),
+  localPcInventory: () => ipcRenderer.invoke('local-pc:inventory'),
+  chooseLocalPcFolder: () => ipcRenderer.invoke('local-pc:choose-folder'),
+  setLocalPcActive: (selected) => ipcRenderer.invoke('local-pc:active', selected),
+  prepareLocalPcUpload: (options) => ipcRenderer.invoke('local-pc:prepare-upload', options),
+  releaseLocalPcUpload: (id) => ipcRenderer.invoke('local-pc:release-upload', id),
   exportLocalSave: (options) => ipcRenderer.invoke('local:export', options),
   importLocalSave: (options) => ipcRenderer.invoke('local:import', options),
   discover: (options) => ipcRenderer.invoke('transfer:discover', options),
@@ -38,6 +44,7 @@ contextBridge.exposeInMainWorld('saveTransfer', {
 });
 
 contextBridge.exposeInMainWorld('saveEditor', {
+  cancel: () => ipcRenderer.invoke('save-editor:cancel'),
   chooseInput: () => ipcRenderer.invoke('save-editor:choose-input'),
   chooseWorkspace: () => ipcRenderer.invoke('save-editor:choose-workspace'),
   chooseOutput: (defaultPath) => ipcRenderer.invoke('save-editor:choose-output', defaultPath),
@@ -53,6 +60,7 @@ contextBridge.exposeInMainWorld('saveEditor', {
   downloadArchive: (archivePath) => ipcRenderer.invoke('save-editor:download-archive', { archivePath }),
   show: (path) => ipcRenderer.invoke('save-editor:show', path),
   run: (options) => ipcRenderer.invoke('save-editor:job', options),
+  releaseTemporary: (id) => ipcRenderer.invoke('save-editor:release-temporary', id),
   onEvent: (callback) => {
     const listener = (_event, detail) => callback(detail);
     ipcRenderer.on('save-editor:event', listener);

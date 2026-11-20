@@ -222,10 +222,12 @@
                   </label>
                 </div>
                 <div class="button-row">
+                  <button id="chooseLocalPcFolderBtn" class="secondary" type="button" hidden>Browse folder…</button>
                   <button id="refreshMySavesBtn" class="secondary" type="button">Refresh</button>
                   <button id="decryptExternalBtn" class="secondary" type="button">Decrypt another save…</button>
                 </div>
               </div>
+              <p id="localPcFolderLabel" class="hint" hidden></p>
               <div id="cmpLibraryTree" class="cmp-only"></div>
               <div class="library-heading">
                 <button id="mySavesBackBtn" class="secondary" type="button" hidden>← All titles</button>
@@ -377,6 +379,7 @@
           <h3>Oracle</h3>
           <label class="checkbox"><input id="useRemoteOracle" type="checkbox" checked> Use remote oracle (no jailbroken console needed)</label>
           <p class="card-hint">Volunteer-run workers derive your save encryption keys. Default server key included &mdash; change only if you have your own.</p>
+          <p class="card-hint">This choice also applies to Encrypt, Decrypt and Resign. Turn it off to use your jailbroken PS5 at the local oracle IP.</p>
           <div class="settings-grid">
             <label>Server URL<input id="serverUrl" value="https://garlicsaves.com" spellcheck="false"></label>
             <label>Server key<input id="workerKey" type="password" placeholder="Pre-filled — change only if you have your own" spellcheck="false"></label>

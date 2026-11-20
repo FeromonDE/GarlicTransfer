@@ -80,7 +80,8 @@
         fileActions: (entry, file) => actions.map(([label, action]) => ({ label, disabled: isBusy(), run: () => {
           const save = savesByFile.get(fileKey(entry, file));
           if (!save || isBusy()) return;
-          onOpen(save); if (action) onAction(action);
+          if (onOpen(save) === false) return;
+          if (action) onAction(action);
         } })),
       });
     }

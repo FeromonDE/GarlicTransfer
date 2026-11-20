@@ -1,0 +1,66 @@
+{
+  "upstream": {
+    "repository": "https://github.com/earthonion/garlic-worker",
+    "commit": "4d1602847e8ee41d3de2f7e94a6e51ededfc8720",
+    "version": "v1.6.6"
+  },
+  "helper_protocol": "garlic-local-v1",
+  "binary": {
+    "file": "garlic-local-worker.elf",
+    "bytes": 214280,
+    "sha256": "c4729cc23228e9392cdf30a550817b24fa66880600ec1a74154d7015bd2e08ad"
+  },
+  "source_sha256": {
+    "src/config.c": "59ad3b702d8e974e4e16787700a9ca2b4d252cd099886cb93d76aeeb2ab4d252",
+    "src/config.h": "babe3c1d831b16fb6e3411160d23ab3b907e0d54a332cb0cbe9e018f3fd3d7bb",
+    "src/http.h": "b245499560ed854aa22bbedbbe54ff12307c0731552a5b3a6a94ac452943647f",
+    "src/json.c": "0921d74b718d1b3787004667a1fe713432173343f028c8cfc0e5fd08ede4c137",
+    "src/json.h": "75cf3e29de8e9722b181ac1a442a545297165a9bb8b268bd176296031bb28aaf",
+    "src/killswitch.c": "79b851ebdab2a6814b378670f4b13d1f77cc38ba0fbdd80230aae705d38ba318",
+    "src/killswitch.h": "0ab9d38fbb2f60038211791f35394081523c69a7f636c0650e07c081c3527786",
+    "src/local_loop.inc": "9bd4d45ca30d51ac486fd989917dbb18ea20d767c13af6385c841fcdc87293d1",
+    "src/local_main.c": "d0ee46c2bbbd1dc3d9c7f9b2b1ae42fa4c67c4856b693dbce3a85bf30ae3a7b7",
+    "src/local_runtime.h": "43e47038c83a9de229f686d6a5910da0d4dc58bf2faca56452ff938a6bed9d86",
+    "src/local_validation.c": "e64c976cf59d2ea27483a0b14b41e441cae41309b8d2b85e1e8ceca192e93b71",
+    "src/log.c": "2a9da5c22b15cb73e8de187b1bfcde314d2791eb3e0ab0cc9479c6b4ee6fef96",
+    "src/log.h": "0c25df00482de1dea4cdfcc16322ad07db56eb9e491a98edc651817e70d9e98e",
+    "src/ps4/http.c": "d18715cb15195bb24baec7743874b5f09c347df956fd248ea3ed4f47cc714b5e",
+    "src/ps4/main.c": "b3e3729b31db7fe45857642d5dc6091d9ef64028b4133c84fcbbdf103f446d35",
+    "src/ps4/savedata.c": "574246b35c83fb1f195620bdda59a438289662f73ed342650c7c98ebcba23c7f",
+    "src/ps4/savedata.h": "e533c54705d3b6d2b44f632f5f53c87b2b2456dac572add209bd4e31fe7b2f7f",
+    "src/ps4/worker.c": "c4bb9f14d81e90bd0b5bbeab442dfc048b9eb068221266568f1cba7fcdaa44c6",
+    "src/ps5/chives.c": "f86033ff0e5b74697a28043729eed3efb143bdbf2631c65566c11843efdeb876",
+    "src/ps5/chives.h": "550040daf41d7aaddc51d2d3abe8fc0625fbab7b252c134c54bceab650ea611b",
+    "src/ps5/chives_io.c": "e4d15a1466b3a4774ca452dcc39c6bb4f96dd3e5fde2cb479d8e8fdc124135a2",
+    "src/ps5/chives_io.h": "898365149954be30f61df8141cdcd736ff36c93cc0d6c01b04f35130dd57665e",
+    "src/ps5/common.h": "7e4735eb5788422bf434ee50ee3a9171c4292f9bebe08c1fcaee066cc486e3c9",
+    "src/ps5/http.c": "5d08c10c0feb69849a58541a1723528f27d9af8924331c5380ed0be2e517f9bf",
+    "src/ps5/internal/save_format.h": "cd4ace3fefd0c4bb067c16b3eb23c17dfff77b2b7808152700c774e140ff9e87",
+    "src/ps5/main.c": "cb2e97a18e3de35f0a1560f81d062a2bf01865ac6ba14d0264426bc20a521a27",
+    "src/ps5/metadata_layout.c": "74f9b26f696618a4e14ce7dcc901e5c077fb29b8d8a172f0323060f69992464d",
+    "src/ps5/metadata_layout.h": "51cbb610e59f2cb69c1a42865c97e5c292f72c48c524bbd2d8fec82b7f8b2537",
+    "src/ps5/pfs_rebuild.c": "72d665d70c3ac6b109d6aa2f3f69bcea4ac10ce9dd727a32eeaa210183bb6cf9",
+    "src/ps5/pfs_rebuild.h": "427ebf786e22fa642d86f0b0b26ee7a25aaf91e2fb45c152c0db9b859f5e38a4",
+    "src/ps5/savedata.c": "f26af30dfd1bba654b5e60c18515e7908e7021d0a4765f38f06a17e5f94eea35",
+    "src/ps5/savedata.h": "b3363f59646c8d91b69e75aee9eab8b1d9ad6a06c7bca706dfa055401e499290",
+    "src/ps5/worker.c": "c9500922d245cdbade31f01843d264cc94fab1d49cb796309445eff74cdc2778",
+    "src/sfo_account.h": "2118a7918eb9ff1cacbc3d256f1348a07b5736abecf99b71295da5c03e0a0340",
+    "src/tcp.c": "5266c691f4f20f86752d185fd4f1aceaef5c6192693e8ee6f56e7a981b176aa7",
+    "src/tcp.h": "7090742092c5012dc37377a9cc7d0c0687465a1e0f29b8f90c30f3cf54521d87",
+    "src/util.c": "e77044f10adfe97b182082e735f004bbba980ec2f9ab2e898c780cf484f10ae7",
+    "src/util.h": "003e46543cb2a53d3123b7da65948ba19aa745130e3c96f89d1662aa8f41b672",
+    "src/worker.h": "90d36bf7c80378a21e32d80a20518a38e864ff8ab5bb6aaac5812f7d32584c4c",
+    "src/zip.c": "647373ca9e2abb3d4c30eefd457f74232458f9d8f63b719aee752de3ff8313e0",
+    "src/zip.h": "c9cdfa94c7e988abab52b3d9fe337673e7abe5ad03a4c861df1d64cda6c79085"
+  },
+  "validation": {
+    "cross_compile": "passed",
+    "native_tests": "passed",
+    "console_execution": "not run"
+  },
+  "test2_strip": {
+    "original_sha256": "1e55999186c0d9ae397c7f766744872f42b984b55b3f507f9418ed163c79e8d2",
+    "proof": "LOAD-EQUIVALENCE.json",
+    "reproducible": true
+  }
+}

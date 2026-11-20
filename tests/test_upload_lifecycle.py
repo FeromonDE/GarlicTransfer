@@ -14,26 +14,26 @@ class UploadLifecycleTests(unittest.TestCase):
     def test_b3_waits_for_disconnect_instead_of_killing_backend(self):
         source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
         b3 = source.index("if (line.toLowerCase().includes('cmd=0xb3'))")
-        b4 = source.index("if (active.transferFinished && !active.rebootRequested && line.toLowerCase().includes('response complete cmd=0x94'))")
-        self.assertIn("active.transferFinished = true", source[b3:b4])
+        b4 = source.index("if (session.transferFinished && !session.rebootRequested && line.toLowerCase().includes('response complete cmd=0x94'))")
+        self.assertIn("session.transferFinished = true", source[b3:b4])
         self.assertNotIn("stopActive", source[b3:b4])
         disconnect_block = source[b4:source.index("child.stderr.on", b4)]
-        self.assertIn("active.completed = true", disconnect_block)
+        self.assertIn("session.completed = true", disconnect_block)
         self.assertIn("stopActive", disconnect_block)
 
     def test_reboot_auth_reconnect_finishes_before_backend_stops(self):
         source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
-        reboot = source.index("active.rebootRequested = true")
-        authenticated = source.index("active.rebootAuthenticated = true", reboot)
-        closed = source.index("active.rebootAuthenticated && line.includes('[cmd] session ended:')", authenticated)
+        reboot = source.index("session.rebootRequested = true")
+        authenticated = source.index("session.rebootAuthenticated = true", reboot)
+        closed = source.index("session.rebootAuthenticated && line.includes('[cmd] session ended:')", authenticated)
         self.assertLess(reboot, authenticated)
         self.assertLess(authenticated, closed)
-        self.assertIn("!active.rebootRequested", source[reboot:closed])
+        self.assertIn("!session.rebootRequested", source[reboot:closed])
         self.assertIn("stopActive", source[closed:source.index("child.stderr.on", closed)])
 
     def test_clean_close_after_b3_is_also_a_success(self):
         source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
-        self.assertIn("active.transferFinished && !active.completed && code === 0", source)
+        self.assertIn("session.transferFinished && !session.completed && code === 0", source)
 
     def test_stop_clears_active_before_killing_process(self):
         source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()

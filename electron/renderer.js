@@ -20,6 +20,8 @@ let requestedDownloadIds = [];
 let pendingUploadOptions = null;
 let pendingUploadEntryIds = null;
 let pendingUploadUserId = null;
+let pendingExternalUpload = null;
+let localPcUploadId = null;
 let browserHost = null;
 let pendingBrowserHost = null;
 let dataTransferArmedHost = null;
@@ -252,7 +254,11 @@ function hideUploadModal() {
 }
 
 function resetUploadUI() {
+  releasePcUpload();
   pendingUploadOptions = null;
+  pendingUploadEntryIds = null;
+  pendingUploadUserId = null;
+  pendingExternalUpload = null;
   externalUploadImage = null;
   controls.externalUploadControls.hidden = true;
   dataTransferArmedHost = null;
@@ -260,6 +266,15 @@ function resetUploadUI() {
   controls.confirmUploadBtn.hidden = true;
   controls.userSelectLabel.hidden = true;
   controls.uploadSaveSelectLabel.hidden = true;
+}
+
+// Function Upload Release
+function releasePcUpload() {
+  const stageId = localPcUploadId;
+  localPcUploadId = null;
+  if (!stageId) return;
+  Promise.resolve().then(() => window.saveTransfer.releaseLocalPcUpload(stageId))
+    .catch(error => appendLog(`[local] Could not remove upload staging: ${error.message}`));
 }
 
 function hideImportModal() {
@@ -346,6 +361,7 @@ async function exportLocalSave(entry, file) {
   try {
     const result = await window.saveTransfer.exportLocalSave({
       assets: options().assets,
+      ...(entry.localSource === 'pc' ? { localSource: 'pc' } : {}),
       entryId: entry.id,
       filename: file.file,
     });
@@ -362,8 +378,10 @@ async function chooseImportReplacement(entry, file) {
   if (activeTransfer || browseSessionActive) return;
   const source = await window.saveTransfer.chooseExternalSave();
   if (!source) return;
-  pendingImport = { assets: options().assets, entryId: entry.id, filename: file.file, source };
-  controls.importWarning.textContent = `This will replace ${file.file}. Make sure you have backed it up. Are you sure you want to do this?`;
+  pendingImport = { assets: options().assets, ...(entry.localSource === 'pc' ? { localSource: 'pc' } : {}), entryId: entry.id, filename: file.file, source };
+  controls.importWarning.textContent = entry.localSource === 'pc'
+    ? `This will replace ${file.file}. A backup will be kept before replacement. Continue?`
+    : `This will replace ${file.file}. Make sure you have backed it up. Are you sure you want to do this?`;
   if (!controls.importModal.open) controls.importModal.showModal();
 }
 
@@ -376,8 +394,8 @@ controls.confirmImportBtn.addEventListener('click', async () => {
   busy(true);
   try {
     await window.saveTransfer.importLocalSave(replacement);
-    await refreshLocalSaves();
-    status(`Replaced ${replacement.filename} and refreshed its upload metadata.`);
+    if (replacement.localSource !== 'pc') await refreshLocalSaves();
+    status(replacement.localSource === 'pc' ? `Replaced ${replacement.filename}. A backup is available.` : `Replaced ${replacement.filename} and refreshed its upload metadata.`);
     document.dispatchEvent(new CustomEvent('local-save-replaced', { detail: replacement }));
   } catch (error) {
     status(`Could not replace ${replacement.filename}: ${error.message}`);
@@ -557,7 +575,9 @@ async function startUploadSource() {
     uploadKind: externalSelected ? 'external' : uploadKinds.values().next().value,
     externalImage: externalSelected ? externalUploadImage : undefined,
     titleId: externalSelected ? titleId : undefined,
+    ...(externalSelected && localPcUploadId ? { localPcUploadId } : {}),
   };
+  if (!externalSelected) releasePcUpload();
   activeTransfer = 'upload';
   showUploadModal();
   busy(true);
@@ -570,6 +590,7 @@ async function startUploadSource() {
   } catch (error) {
     status(`Could not start upload: ${error.message}`);
     activeTransfer = null;
+    resetUploadUI();
     busy(false);
   }
 }
@@ -607,10 +628,17 @@ function showUploadConfirmation() {
     }
     pendingUploadEntryIds = null;
   }
+  if (pendingExternalUpload && availableUsers.length) {
+    externalUploadImage = pendingExternalUpload.folder;
+    controls.externalTitleId.value = pendingExternalUpload.titleId;
+    const option = document.createElement('option'); option.value = 'external';
+    option.textContent = `Local PC: ${pendingExternalUpload.titleId}`;
+    controls.uploadSaveSelect.appendChild(option);
+    for (const item of controls.uploadSaveSelect.options) item.selected = item === option;
+    pendingExternalUpload = null;
+  }
   if (!availableUsers.length) {
-    controls.userSelectLabel.hidden = true;
-    controls.uploadSaveSelectLabel.hidden = true;
-    controls.confirmUploadBtn.hidden = true;
+    resetUploadUI();
     status('No downloaded files are available. Download content before uploading it.');
     return;
   }
@@ -622,9 +650,15 @@ function showUploadConfirmation() {
 }
 
 // Prepare upload selection.
-async function startUpload() {
+async function startUpload({ entryIds = null, userId = null, external = null } = {}) {
+  releasePcUpload();
+  localPcUploadId = external?.stageId || null;
+  pendingUploadEntryIds = entryIds;
+  pendingUploadUserId = userId;
+  pendingExternalUpload = external;
   const current = options();
   if (!current.clientHost) {
+    resetUploadUI();
     status('Discover and select a console first.');
     return;
   }
@@ -649,6 +683,7 @@ async function startUpload() {
     return;
   } catch (error) {
     if (hasExplicitMetadata) {
+      resetUploadUI();
       status(`Could not read metadata inventory: ${error.message}`);
       return;
     }
@@ -663,6 +698,7 @@ async function startUpload() {
   } catch (error) {
     status(`Could not fetch metadata: ${error.message}`);
     activeTransfer = null;
+    resetUploadUI();
     busy(false);
   }
 }
@@ -835,7 +871,7 @@ controls.selectAllEntries.addEventListener('change', () => {
   }
   renderEntries();
 });
-controls.uploadBtn.addEventListener('click', startUpload);
+controls.uploadBtn.addEventListener('click', () => startUpload());
 controls.browseLocalBtn.addEventListener('click', browseLocalSaves);
 controls.confirmUploadBtn.addEventListener('click', startUploadSource);
 controls.finishBtn.addEventListener('click', async () => {
@@ -853,11 +889,14 @@ controls.finishBtn.addEventListener('click', async () => {
   }
 });
 controls.cancelBtn.addEventListener('click', async () => {
+  if (activeTransfer === 'save-editor') {
+    await cancelMySaveOperation();
+    return;
+  }
   await window.saveTransfer.cancel();
   activeTransfer = null;
   hidePairingModal();
-  pendingUploadOptions = null;
-  dataTransferArmedHost = null;
+  resetUploadUI();
   browseSessionActive = false;
   busy(false);
   status('Transfer cancelled.');
@@ -905,6 +944,7 @@ window.saveTransfer.onEvent((event) => {
     if (event.step === 3) hidePowerModal();
     if (event.message === 'Transfer stopped.') {
       activeTransfer = null;
+      resetUploadUI();
       browseSessionActive = false;
       busy(false);
     }
@@ -975,6 +1015,7 @@ window.saveTransfer.onEvent((event) => {
   }
   if (event.type === 'error') {
     activeTransfer = null;
+    resetUploadUI();
     hidePairingModal();
     browseSessionActive = false;
     dataTransferArmedHost = null;
@@ -988,6 +1029,8 @@ window.saveTransfer.onEvent((event) => {
 async function addExternalUpload(folder = false) {
   const image = folder ? await window.saveTransfer.chooseExternalFolder() : await window.saveTransfer.chooseExternalSave();
   if (!image) return;
+  releasePcUpload();
+  pendingExternalUpload = null;
   externalUploadImage = image;
   let option = [...controls.uploadSaveSelect.options].find((item) => item.value === 'external');
   if (!option) {
