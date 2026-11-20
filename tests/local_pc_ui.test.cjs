@@ -218,6 +218,7 @@ test('Local PC files remain usable in Garlic Classic', async () => {
     document.querySelector('#myTitleEntries button').click();
     await until(() => document.querySelector('#mySaveEntries button'), 'Classic PC files were not rendered');
     document.querySelector('#mySaveEntries button').click();
+    await idle(context);
     document.getElementById('mySaveDecryptBtn').click();
     await until(() => pc.calls.files.length === 1, 'Classic PC decryption was not requested');
     await idle(context);
@@ -277,6 +278,7 @@ for (const view of ['classic', 'cmp']) {
         document.querySelector('#myTitleEntries button').click();
         await until(() => document.querySelector('#mySaveEntries button'), 'Classic PC files were not rendered');
         document.querySelector('#mySaveEntries button').click();
+        await idle(context);
       } else await selectFirstFile(context);
       document.getElementById('mySaveDecryptBtn').click();
       await until(() => pc.calls.jobs.some((job) => job.operation === 'decrypt')
@@ -386,6 +388,7 @@ test('switching PC saves requires closing the previous decrypted workspace befor
     const prompts = [];
     window.confirm = (message) => { prompts.push(message); return false; };
     second.click();
+    await idle(context);
     assert.equal(prompts.length, 1);
     assert.equal(document.getElementById('selectedSaveName').textContent, 'PC Adventure');
     assert.equal(document.getElementById('workspacePanel').hidden, false);
@@ -393,6 +396,7 @@ test('switching PC saves requires closing the previous decrypted workspace befor
     assert.ok(document.querySelector('#cmpLibraryTree .cmp-file-selected').textContent.includes('sdimg_DATA'));
     window.confirm = (message) => { prompts.push(message); return true; };
     second.click();
+    await idle(context);
     assert.equal(prompts.length, 2);
     assert.equal(document.getElementById('selectedSaveName').textContent, 'PC Racing');
     assert.equal(document.getElementById('workspacePanel').hidden, true);
@@ -923,6 +927,110 @@ test('a late save cancellation reply preserves a newly decrypted workspace', asy
     assert.equal(document.getElementById('workspacePanel').hidden, false);
     assert.equal(document.getElementById('mySavesStatus').textContent, message);
     assert.deepEqual(pc.calls.temporaryRelease, []);
+    assert.deepEqual(context.errors, []);
+  } finally { dom.window.close(); }
+});
+
+test('a delayed native selection confirmation gates the requested context action', async () => {
+  const context = await app({ profiles: false });
+  const { dom, document, window, pc } = context;
+  try {
+    await openLibrary(context); await selectFirstFile(context);
+    document.getElementById('mySaveDecryptBtn').click(); await idle(context);
+    document.querySelector('.wizard-panel[data-wizard="2"] [data-go="1"]').click();
+    document.querySelector('.wizard-panel[data-wizard="1"] [data-go="0"]').click();
+    let complete, prompts = 0;
+    window.saveTransfer.confirm = async () => { prompts++; return new Promise(resolve => { complete = resolve; }); };
+    const target = [...document.querySelectorAll('#cmpLibraryTree .cmp-file')].find(row => row.textContent.includes('sdimg_sce_sdmemory'));
+    const openExport = () => {
+      target.dispatchEvent(new window.MouseEvent('contextmenu', { clientX: 30, clientY: 30, bubbles: true, cancelable: true }));
+      [...document.querySelectorAll('.cmp-context button')].find(button => button.textContent === 'Export original').click();
+    };
+    openExport();
+    await until(() => typeof complete === 'function', 'Native confirmation did not open');
+    assert.equal(prompts, 1);
+    assert.equal(window.cmpFixture.calls.exports.length, 0);
+    assert.equal(document.getElementById('workspacePanel').hidden, false);
+    complete(false); await idle(context);
+    assert.equal(window.cmpFixture.calls.exports.length, 0);
+    assert.deepEqual(pc.calls.temporaryRelease, []);
+    complete = null;
+    openExport();
+    await until(() => typeof complete === 'function', 'Second native confirmation did not open');
+    complete(true);
+    await until(() => window.cmpFixture.calls.exports.length === 1, 'Confirmed export did not run');
+    await idle(context);
+    assert.equal(window.cmpFixture.calls.exports[0].filename, 'sdimg_sce_sdmemory');
+    assert.equal(pc.calls.temporaryRelease.length, 1);
+    assert.deepEqual(context.errors, []);
+  } finally { dom.window.close(); }
+});
+
+test('a failed native confirmation reports its error and preserves edits until a later confirmation succeeds', async () => {
+  const context = await app({ profiles: false });
+  const { dom, document, window, pc } = context;
+  try {
+    await openLibrary(context); await selectFirstFile(context);
+    document.getElementById('mySaveDecryptBtn').click(); await idle(context);
+    document.querySelector('#workspaceFiles tr').click(); await idle(context);
+    const editor = document.getElementById('fileEditor');
+    editor.value = 'preserve these edits'; editor.dispatchEvent(new window.Event('input'));
+    let prompts = 0;
+    window.saveTransfer.confirm = async () => { prompts++; throw new Error('native dialog unavailable'); };
+    document.getElementById('closeWorkspaceBtn').click(); await idle(context);
+    assert.equal(prompts, 1);
+    assert.match(document.getElementById('status').textContent, /Could not show confirmation: native dialog unavailable/);
+    assert.equal(document.getElementById('workspacePanel').hidden, false);
+    assert.equal(editor.value, 'preserve these edits');
+    assert.deepEqual(pc.calls.temporaryRelease, []);
+    assert.deepEqual(pc.calls.writes, []);
+    assert.deepEqual(pc.calls.encrypt, []);
+    window.saveTransfer.confirm = async () => { prompts++; return true; };
+    document.getElementById('closeWorkspaceBtn').click(); await idle(context);
+    assert.equal(prompts, 2);
+    assert.equal(document.getElementById('workspacePanel').hidden, true);
+    assert.deepEqual(pc.calls.temporaryRelease, ['workspace-1']);
+    assert.deepEqual(context.errors, []);
+  } finally { dom.window.close(); }
+});
+
+test('canceling while a native close confirmation waits preserves edits after late acceptance', async () => {
+  const context = await app({ profiles: false });
+  const { dom, document, window, pc } = context;
+  try {
+    await openLibrary(context); await selectFirstFile(context);
+    document.getElementById('mySaveDecryptBtn').click(); await idle(context);
+    document.querySelector('#workspaceFiles tr').click(); await idle(context);
+    const editor = document.getElementById('fileEditor');
+    editor.value = 'keep these edits'; editor.dispatchEvent(new window.Event('input'));
+    let complete;
+    window.saveTransfer.confirm = async () => new Promise(resolve => { complete = resolve; });
+    window.saveEditor.cancel = async () => false;
+    document.getElementById('closeWorkspaceBtn').click();
+    await until(() => typeof complete === 'function', 'Close confirmation did not open');
+    document.getElementById('cancelBtn').click(); await pause();
+    complete(true); await idle(context);
+    assert.equal(document.getElementById('workspacePanel').hidden, false);
+    assert.equal(editor.value, 'keep these edits');
+    assert.deepEqual(pc.calls.temporaryRelease, []);
+    assert.deepEqual(context.errors, []);
+  } finally { dom.window.close(); }
+});
+
+test('a late Finish confirmation cannot close a newer transfer session', async () => {
+  const context = await app({ profiles: false });
+  const { dom, document, window } = context;
+  try {
+    let complete, finishes = 0;
+    window.saveTransfer.confirm = async () => new Promise(resolve => { complete = resolve; });
+    window.saveTransfer.finish = async () => { finishes++; };
+    window.cmpFixture.emit({ type: 'ready', message: 'First transfer ready', users: [] });
+    document.getElementById('finishBtn').click();
+    await until(() => typeof complete === 'function', 'Finish confirmation did not open');
+    window.cmpFixture.emit({ type: 'error', message: 'First transfer stopped' });
+    window.cmpFixture.emit({ type: 'ready', message: 'Second transfer ready', users: [] });
+    complete(true); await pause();
+    assert.equal(finishes, 0);
     assert.deepEqual(context.errors, []);
   } finally { dom.window.close(); }
 });

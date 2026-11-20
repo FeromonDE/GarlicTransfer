@@ -12,13 +12,17 @@ const { titleName } = require('./titles.cjs');
 const { pairingPrefixPath, existingPairingPrefix } = require('./pairing_store.cjs');
 const { registerSaveEditor } = require('./save_editor.cjs');
 const { LocalPcStore } = require('./local_pc.cjs');
+const { AccountStore } = require('./account_store.cjs');
+const { registerAccountClose } = require('./account_close.cjs');
 const { LocalHelper } = require('./local_helper.cjs');
 const { recordConsoleNames } = require('./console_names.cjs');
 const { resourceRoot, localWorkerElf, workDir, pythonBin } = require('./paths.cjs');
 let window;
 let active = null;
 let oracleRelay = null;
+let confirmationPending = false;
 const localPcRoot = path.join(app.getPath('userData'), 'local-pc');
+const accountStore = new AccountStore(path.join(app.getPath('userData'), 'account-list.json'));
 const pcStore = new LocalPcStore({
   stateFile: path.join(app.getPath('userData'), 'local-pc.json'),
   backupRoot: path.join(localPcRoot, 'backups'),
@@ -520,11 +524,12 @@ app.whenReady().then(() => {
       sandbox: true,
     },
   });
+  registerAccountClose({ app, window, ipcMain, dialog, onError: error => send('log', { message: `Account close: ${error.message}` }) });
   window.loadFile(path.join(__dirname, 'index.html'));
 });
 
-app.on('before-quit', stopActive);
-app.on('before-quit', () => localHelper.stop());
+app.on('will-quit', stopActive);
+app.on('will-quit', () => localHelper.stop());
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
@@ -653,6 +658,35 @@ ipcMain.handle('transfer:power', () => {
 ipcMain.handle('transfer:cancel', stopActive);
 ipcMain.handle('settings:get', () => loadSettings());
 ipcMain.handle('settings:set', (_event, settings) => saveSettings(settings));
+
+// Function Confirmation
+ipcMain.handle('app:confirm', async (event, message) => {
+  if (typeof message !== 'string' || !message.trim() || message.length > 4096) {
+    throw new Error('Enter a confirmation message up to 4096 characters.');
+  }
+  const owner = window;
+  if (!owner || owner.isDestroyed() || event?.sender !== owner.webContents
+      || event.sender.isDestroyed?.() || confirmationPending) return false;
+  confirmationPending = true;
+  try {
+    const result = await dialog.showMessageBox(owner, {
+      type: 'question', title: 'GarlicTransfer', message: message.trim(),
+      buttons: ['Cancel', 'Continue'], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return window === owner && !owner.isDestroyed() && !event.sender.isDestroyed?.() && result.response === 1;
+  } finally {
+    confirmationPending = false;
+  }
+});
+
+// Function Account Actions
+ipcMain.handle('accounts:get', () => accountStore.getState());
+ipcMain.handle('accounts:add', (_event, id, name) => accountStore.add(id, name));
+ipcMain.handle('accounts:rename', (_event, id, name) => accountStore.rename(id, name));
+ipcMain.handle('accounts:remove', (_event, id) => accountStore.remove(id));
+ipcMain.handle('accounts:select', (_event, id) => accountStore.select(id));
+ipcMain.handle('accounts:display-mode', (_event, mode) => accountStore.setDisplayMode(mode));
+ipcMain.handle('accounts:use-current', (_event, value) => accountStore.setUseCurrent(value));
 
 registerSaveEditor({
   ipcMain,

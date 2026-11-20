@@ -104,3 +104,47 @@ test('local callbacks use refreshed records and block actions while busy', () =>
   assert.equal(options.entries.length, 0);
   assert.equal(opened.length, 2);
 });
+
+for (const accepted of [true, false, null]) {
+  test(`local actions await asynchronous selection (${accepted})`, async () => {
+    const save = { entry: { id: 11, owner: 'a', title: 'PPSA11111' }, file: { file: 'DATA', path: '/DATA' } };
+    let options, complete;
+    const actions = [];
+    const adapter = library({ layout: { setLibrary: value => { options = value; } },
+      onOpen: () => new Promise(resolve => { complete = resolve; }),
+      onAction: action => actions.push(action), isBusy: () => false });
+    adapter.render({ saves: [save], users: [], filter: '', busy: false, selected: null });
+    const running = options.fileActions(save.entry, save.file).find(action => action.label === 'Export original').run();
+    assert.deepEqual(actions, []);
+    complete(accepted);
+    await running;
+    assert.deepEqual(actions, accepted === true ? ['mySaveExportBtn'] : []);
+  });
+}
+
+test('local asynchronous selection failures are handled for open and context actions', async () => {
+  const save = { entry: { id: 11, owner: 'a', title: 'PPSA11111' }, file: { file: 'DATA', path: '/DATA' } };
+  let options;
+  const actions = [];
+  const adapter = library({ layout: { setLibrary: value => { options = value; } },
+    onOpen: async () => { throw new Error('selection failed'); },
+    onAction: action => actions.push(action), isBusy: () => false });
+  adapter.render({ saves: [save], users: [], filter: '', busy: false, selected: null });
+  await assert.doesNotReject(options.onOpen(save.entry, save.file));
+  await assert.doesNotReject(options.fileActions(save.entry, save.file).find(action => action.label === 'Export original').run());
+  assert.deepEqual(actions, []);
+});
+
+test('local asynchronous selection rechecks busy state before dispatching the action', async () => {
+  const save = { entry: { id: 11, owner: 'a', title: 'PPSA11111' }, file: { file: 'DATA', path: '/DATA' } };
+  let options, complete, busy = false;
+  const actions = [];
+  const adapter = library({ layout: { setLibrary: value => { options = value; } },
+    onOpen: () => new Promise(resolve => { complete = resolve; }),
+    onAction: action => actions.push(action), isBusy: () => busy });
+  adapter.render({ saves: [save], users: [], filter: '', busy: false, selected: null });
+  const running = options.fileActions(save.entry, save.file).find(action => action.label === 'Export original').run();
+  busy = true; complete(true);
+  await running;
+  assert.deepEqual(actions, []);
+});

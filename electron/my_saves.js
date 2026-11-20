@@ -18,6 +18,12 @@ myControls.mySavesTab = document.getElementById('libraryPage');
 let currentWizardStep = 0;
 function goToLibraryStep(step) {
   currentWizardStep = step;
+  const accountControls = document.getElementById('workspaceAccountControls');
+  const accountHost = step === 1 ? myControls.selectedSavePanel : document.querySelector('.workspace-heading');
+  if (accountControls && accountHost && accountControls.parentElement !== accountHost) {
+    if (step === 1) accountHost.prepend(accountControls);
+    else accountHost.append(accountControls);
+  }
   for (const panel of document.querySelectorAll('.wizard-panel')) {
     const isTarget = panel.dataset.wizard === String(step);
     panel.classList.toggle('active', isTarget);
@@ -57,6 +63,7 @@ let decryptedWorkspace = null;
 let decryptedArchive = null;
 let decryptedTemporaryId = null;
 let workspaceDetails = null;
+let accountWorkspace = null;
 let selectedWorkspaceFile = null;
 let selectedFileBytes = null;
 let editorDirty = false;
@@ -64,6 +71,7 @@ let workspaceModified = false;
 let mySaveOperation = false;
 let myOperationSequence = 0;
 let myCancelOperation = 0;
+let myCancellationSequence = 0;
 
 function myStatus(message) {
   myControls.mySavesStatus.textContent = message;
@@ -73,6 +81,29 @@ function myLog(message) {
   myControls.mySavesLog.textContent += `${message}\n`;
   myControls.mySavesLog.scrollTop = myControls.mySavesLog.scrollHeight;
 }
+
+// Function Account Selection
+const savedAccounts = window.saveAccounts && window.SavedAccounts?.create(document, window.saveAccounts, {
+  isBusy: () => Boolean(mySaveOperation || activeTransfer || browseSessionActive),
+  onTargetChange: id => {
+    myControls.encryptAccountId.value = id || workspaceDetails?.accountId || '';
+    myControls.resignAccountId.value = id || '';
+    const fixedAccount = savedAccounts.isUsingCurrent() || Boolean(savedAccounts.getSelectedId());
+    myControls.encryptAccountId.readOnly = fixedAccount;
+    myControls.resignAccountId.readOnly = fixedAccount;
+  },
+});
+
+// Function Account Closing
+window.saveAccounts?.onBeforeClose?.(async () => {
+  setAccountClosing(true);
+  savedAccounts?.setBusy(true);
+  await savedAccounts?.prepareClose();
+}, () => {
+  setAccountClosing(false);
+  savedAccounts?.setBusy(mySaveOperation);
+});
+document.addEventListener('transfer-state-changed', () => savedAccounts?.setBusy(mySaveOperation || accountClosing));
 
 function setMyOperation(value) {
   mySaveOperation = value;
@@ -86,11 +117,12 @@ function setMyOperation(value) {
   myControls.resignAccountId.disabled = value;
   myControls.encryptAccountId.disabled = value;
   myControls.workspaceFiles.style.pointerEvents = value ? 'none' : '';
+  savedAccounts?.setBusy(value || accountClosing);
   if (!value) updateMyFileActions();
 }
 
 async function runMyOperation(action) {
-  if (mySaveOperation || activeTransfer || browseSessionActive) {
+  if (accountClosing || mySaveOperation || activeTransfer || browseSessionActive) {
     myStatus('Finish the current transfer or save operation first.');
     return null;
   }
@@ -120,12 +152,20 @@ async function runMyOperation(action) {
   }
 }
 
+// Function Save Confirmation
+async function confirmSaveAction(message) {
+  const cancellation = myCancellationSequence;
+  const confirmed = await confirmAction(message);
+  return confirmed && cancellation === myCancellationSequence;
+}
+
 // Function Save Cancellation
 async function cancelMySaveOperation() {
   if (!mySaveOperation || activeTransfer !== 'save-editor') return;
   const operation = myOperationSequence;
   if (myCancelOperation === operation) return;
   myCancelOperation = operation;
+  myCancellationSequence++;
   controls.cancelBtn.disabled = true;
   myStatus('Canceling the save operation…');
   status('Canceling the save operation…');
@@ -198,7 +238,7 @@ function renderLocalUsers(ids, users) {
 // Function Local Tree
 const libraryTree = window.SaveTreeBridge.library({
   layout: cmpLayout, onOpen: (save) => selectMySave(save),
-  onAction: (action) => myControls[action].click(), isBusy: () => mySaveOperation,
+  onAction: (action) => myControls[action].click(), isBusy: () => accountClosing || mySaveOperation,
 });
 
 function myTitleGroups() {
@@ -241,7 +281,7 @@ function openSaveContextMenu(event, actions, position = event) {
   event.preventDefault();
   event.stopPropagation();
   closeSaveContextMenu();
-  if (mySaveOperation || activeTransfer || browseSessionActive) return;
+  if (accountClosing || mySaveOperation || activeTransfer || browseSessionActive) return;
   saveContextMenu = document.createElement('div');
   saveContextMenu.className = 'save-context-menu';
   saveContextMenu.setAttribute('role', 'menu');
@@ -280,9 +320,9 @@ function attachSaveContextMenu(row, actions, select) {
 function localSaveActions(save) {
   const action = (label, control) => ({
     label,
-    run: () => {
-      if (mySaveOperation || activeTransfer || browseSessionActive) return;
-      if (selectMySave(save) === false) return;
+    run: async () => {
+      if (accountClosing || mySaveOperation || activeTransfer || browseSessionActive) return;
+      if (!await selectMySave(save)) return;
       if (control) myControls[control].click();
     },
   });
@@ -381,14 +421,8 @@ myControls.mySavesBackBtn.addEventListener('click', () => {
   myStatus('Select a title to see its saves.');
 });
 
-function selectMySave(save) {
-  if (mySaveOperation || activeTransfer || browseSessionActive) return false;
-  if (decryptedWorkspace && (!selectedLocalSave || localSaveKey(save) !== localSaveKey(selectedLocalSave))) {
-    if (!window.confirm(workspaceModified || editorDirty
-      ? 'Discard changes that have not been encrypted and select another save?'
-      : 'Close the current decrypted files before selecting another save?')) return false;
-    closeMyWorkspace(true);
-  }
+// Function Save Selection
+function applyMySaveSelection(save) {
   selectedLocalSave = save;
   myControls.selectedSavePanel.hidden = false;
   myControls.selectedSaveName.textContent = save.entry.name || save.entry.title;
@@ -400,13 +434,27 @@ function selectMySave(save) {
   return true;
 }
 
+function selectMySave(save) {
+  if (accountClosing || mySaveOperation || activeTransfer || browseSessionActive) return false;
+  if (!decryptedWorkspace || (selectedLocalSave && localSaveKey(save) === localSaveKey(selectedLocalSave))) {
+    return applyMySaveSelection(save);
+  }
+  return runMyOperation(async () => {
+    if (!await confirmSaveAction(workspaceModified || editorDirty
+      ? 'Discard changes that have not been encrypted and select another save?'
+      : 'Close the current decrypted files before selecting another save?')) return false;
+    await closeMyWorkspace(true);
+    return applyMySaveSelection(save);
+  });
+}
+
 // Function Local Profile
 async function selectLocalConsole(profileId, { inventory, persist = true, confirmed = false } = {}) {
   const pc = profileId === LOCAL_PC_SOURCE;
   const profile = localProfiles.find((candidate) => candidate.id === profileId);
   const nextPath = pc ? (inventory || localPcInventory).root || LOCAL_PC_SOURCE : profile?.path;
   const switching = localPcMode !== pc || loadedLocalPath !== nextPath;
-  if (switching && decryptedWorkspace && !confirmed && !window.confirm(workspaceModified || editorDirty
+  if (switching && decryptedWorkspace && !confirmed && !await confirmSaveAction(workspaceModified || editorDirty
     ? 'Discard changes that have not been encrypted and switch sources?'
     : 'Switch sources and close the current decrypted files?')) {
     myControls.localConsoleSelect.value = selectedLocalSource;
@@ -416,7 +464,7 @@ async function selectLocalConsole(profileId, { inventory, persist = true, confir
   ++cmpInventoryRequest;
   if (switching) {
     cmpLayout.resetLibrary();
-    if (decryptedWorkspace) closeMyWorkspace(true);
+    if (decryptedWorkspace) await closeMyWorkspace(true);
     selectedTitle = null; selectedLocalSave = null;
     myControls.selectedSavePanel.hidden = true;
     myControls.localUserSelect.value = '';
@@ -509,7 +557,7 @@ myControls.localConsoleSelect.addEventListener('change', () => runMyOperation(()
 // Function PC Folder
 myControls.chooseLocalPcFolderBtn.addEventListener('click', () => runMyOperation(async () => {
   if (!localPcMode) return;
-  if (decryptedWorkspace && !window.confirm(workspaceModified || editorDirty
+  if (decryptedWorkspace && !await confirmSaveAction(workspaceModified || editorDirty
     ? 'Choose another folder and discard changes that have not been encrypted?'
     : 'Choose another folder and close the current decrypted files?')) return;
   const inventory = await window.saveTransfer.chooseLocalPcFolder();
@@ -562,8 +610,13 @@ function renderWorkspace() {
   myControls.workspacePanel.hidden = !decryptedWorkspace;
   if (!decryptedWorkspace || !workspaceDetails) return;
   goToLibraryStep(2);
-  myControls.workspaceSummary.textContent = `${workspaceDetails.files.length} file(s)${workspaceDetails.titleId ? ` · ${workspaceDetails.titleId}` : ''}${workspaceDetails.accountId ? ` · Account ID ${workspaceDetails.accountId}` : ''}`;
-  myControls.encryptAccountId.value = workspaceDetails.accountId || myControls.encryptAccountId.value;
+  myControls.workspaceSummary.textContent = `${workspaceDetails.files.length} file(s)${workspaceDetails.titleId ? ` · ${workspaceDetails.titleId}` : ''}`;
+  const newAccountWorkspace = accountWorkspace !== decryptedWorkspace;
+  accountWorkspace = decryptedWorkspace;
+  savedAccounts?.setCurrentAccount(workspaceDetails.accountId || '');
+  myControls.encryptAccountId.value = savedAccounts
+    ? savedAccounts.getTargetId(newAccountWorkspace ? workspaceDetails.accountId || '' : myControls.encryptAccountId.value || workspaceDetails.accountId || '')
+    : workspaceDetails.accountId || myControls.encryptAccountId.value;
   myControls.workspaceFiles.replaceChildren();
   for (const file of workspaceDetails.files) {
     const row = document.createElement('tr');
@@ -693,7 +746,7 @@ function renderEditor() {
 }
 
 async function openWorkspaceFile(file) {
-  if (editorDirty && !window.confirm('Discard unsaved changes to this file?')) return;
+  if (editorDirty && !await confirmSaveAction('Discard unsaved changes to this file?')) return;
   selectedWorkspaceFile = file;
   selectedFileBytes = null;
   myControls.fileEditorPanel.hidden = true;
@@ -704,20 +757,22 @@ async function openWorkspaceFile(file) {
   renderWorkspace();
 }
 
-function closeMyWorkspace(confirmed = false) {
+async function closeMyWorkspace(confirmed = false) {
   if ((editorDirty || workspaceModified) && confirmed !== true
-    && !window.confirm('Discard changes that have not been encrypted and close the decrypted files?')) return;
+    && !await confirmSaveAction('Discard changes that have not been encrypted and close the decrypted files?')) return;
   const temporaryId = decryptedTemporaryId;
   decryptedTemporaryId = null;
   decryptedWorkspace = null;
   decryptedArchive = null;
   workspaceDetails = null;
+  accountWorkspace = null;
   selectedWorkspaceFile = null;
   selectedFileBytes = null;
   editorDirty = false;
   workspaceModified = false;
   myControls.workspacePanel.hidden = true;
   myControls.encryptPanel.hidden = true;
+  savedAccounts?.setCurrentAccount('');
   goToLibraryStep(selectedLocalSave ? 1 : 0);
   myStatus('Decrypted files closed. Your original save is still selected.');
   void releaseSaveTemporary(temporaryId);
@@ -725,7 +780,7 @@ function closeMyWorkspace(confirmed = false) {
 
 async function decryptInputs(inputs, { external = false } = {}) {
   if (!inputs.length) return false;
-  if (decryptedWorkspace && !window.confirm(workspaceModified || editorDirty
+  if (decryptedWorkspace && !await confirmSaveAction(workspaceModified || editorDirty
     ? 'Discard changes that have not been encrypted and decrypt another save?'
     : 'Close the current decrypted files before decrypting another save?')) return false;
   myStatus('Decrypting your save…');
@@ -766,6 +821,85 @@ myControls.decryptExternalBtn.addEventListener('click', () => runMyOperation(asy
   await decryptInputs(inputs, { external: true });
 }));
 
+// Function Save ZIP Drop
+{
+  const zone = document.getElementById('decryptExternalDropZone');
+  let dragDepth = 0;
+  const available = () => !accountClosing && !mySaveOperation && !activeTransfer && !browseSessionActive;
+  const fileDrag = event => {
+    const transfer = event.dataTransfer;
+    return Boolean(transfer && (Array.from(transfer.types || []).includes('Files')
+      || transfer.files?.length || Array.from(transfer.items || []).some(item => item.kind === 'file')));
+  };
+  const clear = () => { dragDepth = 0; zone?.classList.remove('drag-active'); };
+  const preview = event => {
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length) return files.length === 1 && /\.zip$/i.test(files[0].name);
+    const items = Array.from(event.dataTransfer.items || []).filter(item => item.kind === 'file');
+    return items.length <= 1;
+  };
+  const highlight = event => {
+    const ready = available();
+    zone.classList.toggle('drag-active', ready && preview(event));
+    event.dataTransfer.dropEffect = ready ? 'copy' : 'none';
+  };
+  zone?.addEventListener('dragenter', event => {
+    if (!fileDrag(event)) return;
+    event.preventDefault(); event.stopPropagation();
+    dragDepth++;
+    highlight(event);
+  });
+  zone?.addEventListener('dragover', event => {
+    if (!fileDrag(event)) return;
+    event.preventDefault(); event.stopPropagation();
+    highlight(event);
+  });
+  zone?.addEventListener('dragleave', event => {
+    if (!fileDrag(event) && !dragDepth) return;
+    event.preventDefault(); event.stopPropagation();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) clear();
+  });
+  zone?.addEventListener('drop', event => {
+    clear();
+    if (!fileDrag(event)) return;
+    event.preventDefault(); event.stopPropagation();
+    if (!available()) {
+      myStatus('Finish the current transfer or save operation first.');
+      return;
+    }
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length !== 1) {
+      myStatus('Drop one encrypted save ZIP at a time.');
+      return;
+    }
+    const file = files[0];
+    if (!/\.zip$/i.test(file.name)) {
+      myStatus('Drop an encrypted save ZIP (.zip).');
+      return;
+    }
+    if (typeof file.path !== 'string' || !file.path.trim()) {
+      myStatus('This ZIP has no local file path. Drop it from your file manager.');
+      return;
+    }
+    void runMyOperation(() => decryptInputs([file.path], { external: true }));
+  });
+  document.addEventListener('dragover', event => {
+    if (!fileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'none';
+    clear();
+  });
+  document.addEventListener('drop', event => {
+    if (!fileDrag(event)) return;
+    event.preventDefault();
+    clear();
+  });
+  document.addEventListener('dragend', clear);
+  document.addEventListener('transfer-state-changed', () => { if (!available()) clear(); });
+  window.addEventListener('blur', clear);
+}
+
 myControls.mySaveDecryptBtn.addEventListener('click', () => runMyOperation(async () => {
   if (!selectedLocalSave) return;
   const inputs = await window.saveEditor.localFile(localSaveOptions());
@@ -773,7 +907,7 @@ myControls.mySaveDecryptBtn.addEventListener('click', () => runMyOperation(async
 }));
 
 async function uploadCurrentSave() {
-  if (!selectedLocalSave) return;
+  if (accountClosing || !selectedLocalSave) return;
   let selection;
   if (selectedLocalSave.entry.localSource === 'pc') {
     const prepared = await runMyOperation(() => window.saveTransfer.prepareLocalPcUpload({ entryId: selectedLocalSave.entry.id }));
@@ -781,6 +915,13 @@ async function uploadCurrentSave() {
     selection = { external: prepared };
   } else {
     selection = { entryIds: [selectedLocalSave.entry.id], userId: selectedLocalSave.entry.owner };
+  }
+  if (accountClosing) {
+    if (selection.external?.stageId) {
+      try { await window.saveTransfer.releaseLocalPcUpload(selection.external.stageId); }
+      catch (error) { myLog(`Could not remove upload staging: ${error.message}`); }
+    }
+    return;
   }
   document.querySelector('[data-page="upload"]').click();
   await startUpload(selection);
@@ -825,7 +966,7 @@ myControls.decryptExportBtn.addEventListener('click', () => runMyOperation(async
   if (!decryptedArchive) return;
   const destination = await window.saveEditor.downloadArchive(decryptedArchive);
   if (destination) {
-    closeMyWorkspace();
+    await closeMyWorkspace();
     myStatus(`Decrypted save exported to ${destination}`);
   }
 }));
@@ -848,7 +989,12 @@ myControls.mySaveResignBtn.addEventListener('click', () => {
 
 myControls.confirmResignBtn.addEventListener('click', () => runMyOperation(async () => {
   if (!selectedLocalSave) return;
-  const accountId = myControls.resignAccountId.value.trim();
+  await savedAccounts?.waitForChanges();
+  if (savedAccounts?.isUsingCurrent()) {
+    myStatus('Uncheck Use current ID and choose a target account before resigning.');
+    return;
+  }
+  const accountId = savedAccounts?.getTargetId(myControls.resignAccountId.value.trim()) || myControls.resignAccountId.value.trim();
   if (!/^[0-9a-f]{16}$/i.test(accountId)) {
     myStatus('Enter a 16-digit hexadecimal account ID before resigning.');
     return;
@@ -889,7 +1035,8 @@ myControls.encryptSaveBtn.addEventListener('click', () => runMyOperation(encrypt
 
 async function encryptWorkspace() {
   if (!decryptedWorkspace) return null;
-  const accountId = myControls.encryptAccountId.value.trim();
+  await savedAccounts?.waitForChanges();
+  const accountId = savedAccounts?.getTargetId(myControls.encryptAccountId.value.trim()) || myControls.encryptAccountId.value.trim();
   if (!/^[0-9a-f]{16}$/i.test(accountId)) {
     myStatus('Enter a 16-digit hexadecimal account ID before encrypting.');
     return null;
@@ -897,7 +1044,7 @@ async function encryptWorkspace() {
   myStatus('Encrypting your edited save…');
   let result;
   if (selectedLocalSave) {
-    if (!window.confirm(`Replace ${selectedLocalSave.file.file} with your edited save? A backup will be created first.`)) return null;
+    if (!await confirmSaveAction(`Replace ${selectedLocalSave.file.file} with your edited save? A backup will be created first.`)) return null;
     const pc = selectedLocalSave.entry.localSource === 'pc';
     const selection = localSaveOptions();
     let backup = pc ? null : await window.saveEditor.backupLocal(selection);
@@ -936,7 +1083,7 @@ async function encryptWorkspace() {
 
 myControls.confirmEncryptBtn.addEventListener('click', () => runMyOperation(encryptWorkspace));
 
-myControls.closeWorkspaceBtn.addEventListener('click', closeMyWorkspace);
+myControls.closeWorkspaceBtn.addEventListener('click', () => runMyOperation(() => closeMyWorkspace()));
 myControls.editorMode.addEventListener('change', () => {
   if (!selectedFileBytes) return;
   const previousMode = myControls.editorMode.value === 'hex' ? 'text' : 'hex';
@@ -997,7 +1144,7 @@ myControls.downloadFileBtn.addEventListener('click', () => runMyOperation(async 
 }));
 myControls.deleteFileBtn.addEventListener('click', () => runMyOperation(async () => {
   if (!selectedWorkspaceFile || selectedWorkspaceFile.protected) return;
-  if (!window.confirm(`Delete ${selectedWorkspaceFile.path} from the decrypted workspace?`)) return;
+  if (!await confirmSaveAction(`Delete ${selectedWorkspaceFile.path} from the decrypted workspace?`)) return;
   workspaceDetails = await window.saveEditor.delete({ root: decryptedWorkspace, path: selectedWorkspaceFile.path });
   workspaceModified = true;
   myLog(`Deleted ${selectedWorkspaceFile.path} from the decrypted workspace.`);

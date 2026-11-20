@@ -20,6 +20,7 @@
     window.HTMLDialogElement.prototype.close = function close() { this.open = false; };
   }
   window.saveTransfer = {
+    confirm: async message => window.confirm(message),
     pairingAvailable: true, firewallAvailable: false,
     getSettings: async () => ({ ...settings }), saveSettings: async (value) => { settings = { ...value }; calls.settings.push(value); },
     version: async () => '0.3.1-cmp-skin1', pairingStatus: async () => true,

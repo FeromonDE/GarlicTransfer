@@ -1,15 +1,15 @@
-GarlicTransfer main - Local Oracle Test5 Cleanup
-App version: 0.3.2
-Base: earthonion/GarlicTransfer main, 26b36b1bce4d83f8f8b6e26cd6b0f41a255835b6
+GarlicTransfer - Saved Accounts Test5
+App version: 0.3.3
+Source: supplied GarlicTransfer.zip, with previous Local PC and worker changes.
 
 INSTALL
-The Local Oracle test Windows ZIP is a complete portable x64 build.
-Extract it into a new folder and run GarlicTransfer.exe.
-Python is bundled; no separate Python installation is needed.
-For the Test5 update ZIP, close GarlicTransfer and merge its resources folder
-into an existing Local Oracle Test1/2/3/4 installation, replacing matching files.
-Run GarlicTransfer.exe normally; the existing Python files are reused.
-Test5 includes all previous Local PC, local worker and cleanup changes.
+Close GarlicTransfer. From the Saved Accounts Test5 update ZIP, copy
+resources/app.asar into your current installation's resources folder,
+replacing app.asar. Run GarlicTransfer.exe normally.
+The existing Python, PS5 helper, settings and saved-account list are reused.
+The full Windows portable build can still be extracted into a new folder;
+Python is bundled, so no separate Python installation is needed.
+This test includes all previous Local PC, worker and cleanup changes.
 
 LOCAL PC SAVES
 In Local files / My Saves, choose Local PC in the Console selector.
@@ -25,6 +25,13 @@ Choose the actual destination PS5 user in the upload dialog; a PC user-folder
 name only groups files and does not set the account ID.
 The editor More-menu fix and upstream save context-menu styles are included.
 
+ZIP DROP DECRYPTION
+Drop one encrypted save ZIP onto Decrypt another save to start decryption.
+The same button still opens the file picker. The current Use GarlicWorker
+setting selects remote or local processing, just like the picker workflow.
+Existing workspace changes still require confirmation before replacement.
+The original ZIP stays in place. Busy or closing apps do not queue a new job.
+
 LOCAL SAVE PROCESSING
 With Use GarlicWorker off, Decrypt/Encrypt/Resign use your local PS5.
 Enter the local PS5 IPv4 address and start its ELF payload listener on 9021.
@@ -35,7 +42,50 @@ jobs on 9023. It is sent when needed; an existing compatible helper is reused.
 Local inputs are packed and validated before helper startup. Each file and
 its complete packed archive must fit below 4 GiB.
 Results become available only after complete receipt and successful completion.
-The helper binary and save-processing code are unchanged from Test2.
+The saved-account updates do not change the helper binary or save-processing code.
+
+SAVED ACCOUNTS
+The current account appears beside the target selector in the save screens.
+Known accounts show their saved name; hover over it to see the full hex ID.
+Accounts without a saved name still show their hex ID.
+Add current ID opens a Name dialog. Enter a name and press Save or Enter.
+Cancel or Escape closes it without adding an account.
+Settings / Saved accounts has Account ID, Name and Remove columns in its own
+scroll area. Type directly in the Name field; it saves after a short pause.
+Enter or leaving the field saves immediately. There is no separate Edit button.
+Saving keeps the same text box, focus, caret and any newer text being typed.
+Failed name saves keep your draft and show the error beside that name.
+Other accounts can still save. Press Enter or edit the failed name to retry.
+Errors from an older request do not invalidate newer text. Corrected names
+continue saving, and reverting to the saved name clears the obsolete error.
+Names are limited to 64 characters. Add and Rename show "Name already in use."
+for matching names, ignoring capitalization and surrounding spaces.
+Blank names use the Account ID. Existing lists remain readable.
+Failed additions keep the Name dialog open for correction and retry.
+Confirmation prompts use a native app dialog to avoid the Windows input-focus
+issue associated with browser confirm pop-ups. Cancel keeps the current data.
+Choose Display name or Account ID for the target selector in Settings.
+Use current ID starts checked and keeps the save's existing account when
+encrypting. Uncheck it to choose a saved target, or leave Choose account
+selected to enter a target ID manually in the save action.
+The target applies to Encrypt, Save & encrypt and Resign in local and remote
+modes. Save & encrypt applies the target during encryption; no separate resign
+step is needed. These controls are also available before decrypting a save.
+Removing the selected account restores Use current ID. Checking Use current ID
+remembers your saved target for when you uncheck it again.
+The list, names, display preference and target selection are saved automatically
+in account-list.json in the application's user-data folder. Existing saved
+accounts remain available after updating the app.
+Closing or quitting waits for pending account-name saves. If saving fails,
+choose Keep editing to correct it, or Discard unsaved names and close.
+New transfers, discovery and imports wait while the final name saves finish.
+Existing jobs can complete normally. Keeping the app open restores controls.
+Close checks follow the current app page after a reload; old replies are ignored.
+An unreadable account-list.json is preserved in an exclusive recovery backup
+before a later change replaces it. Failed backups prevent replacement.
+Recovery files are beside it, named account-list.json.recovery-<id>.bak.
+Recovery retries recheck the source before replacement. If it was manually
+changed or repaired, saving stops and asks you to restart GarlicTransfer.
 
 LOCAL ADDITIONS CLEANUP
 - Transfers and save editing share helper startup and connection checks.
@@ -126,15 +176,16 @@ INCLUDED TREE CLEANUP
 - All previous changes and external skin formats are included.
 
 VALIDATION
-263 Node 22 tests and 105 Python tests passed (368 total).
-Targeted compatibility checks also passed under Node 18.
+404 Node 22 tests and 105 Python tests passed (509 total).
+All 140 account, close, confirmation and tree checks passed under Node 18.
 The packaged Electron files match the tested source.
-See BUILD-NOTES.txt in the source archive for detailed validation results.
-Image failure behavior is tested through simulated browser error events.
-No rendered Windows appearance or live PS5 test performed.
+Name entry, automatic saving, Enter, Cancel/Escape, failed-save retry, focus,
+caret retention and current-name tooltips are covered by DOM event tests.
+Windows appearance and native input still need testing on your machine.
+No live PS5 test performed.
 
 CONTENTS
-The update ZIP contains resources/app.asar and matching helper resources.
+The Saved Accounts update ZIP contains resources/app.asar; helper files are unchanged.
 The source ZIP opens directly at the project root, with source and tests.
 skin-template/my-onion/: editable external add-in example.
 poc/local_worker/: matching helper source and GPL license.

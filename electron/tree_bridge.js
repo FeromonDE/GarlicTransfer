@@ -67,6 +67,19 @@
       entries = [...unique.values()];
     }
 
+    // Function Save Opening
+    function openSave(save, action) {
+      const complete = accepted => {
+        if (accepted === false || accepted === null || isBusy()) return;
+        return action ? onAction(action) : undefined;
+      };
+      const opened = onOpen(save);
+      if (opened && typeof opened.then === 'function') return Promise.resolve(opened).then(complete).catch(() => {});
+      const result = complete(opened);
+      if (result && typeof result.then === 'function') return Promise.resolve(result).catch(() => {});
+      return result;
+    }
+
     // Function Local Tree
     function render({ saves, users, filter, busy, selected }) {
       index(saves);
@@ -75,13 +88,12 @@
         files: (entry) => filesByEntry.get(tree.saveKey(entry)) || [],
         selectedFile: (entry, file) => selectedKey === fileKey(entry, file),
         onOpen: (entry, file) => {
-          const save = savesByFile.get(fileKey(entry, file)); if (save && !isBusy()) onOpen(save);
+          const save = savesByFile.get(fileKey(entry, file)); if (save && !isBusy()) return openSave(save);
         },
         fileActions: (entry, file) => actions.map(([label, action]) => ({ label, disabled: isBusy(), run: () => {
           const save = savesByFile.get(fileKey(entry, file));
           if (!save || isBusy()) return;
-          if (onOpen(save) === false) return;
-          if (action) onAction(action);
+          return openSave(save, action);
         } })),
       });
     }

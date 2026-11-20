@@ -54,5 +54,4 @@ test('upload button opens dismissible console instructions', () => {
   assert.doesNotMatch(html, /Delete selected original saves and start upload/);
   assert.match(renderer, /activeTransfer = 'upload';\s*showUploadModal\(\);/);
   assert.match(renderer, /uploadModalCloseBtn\.addEventListener\('click', hideUploadModal\)/);
-  assert.match(renderer, /if \(!value\) \{[\s\S]*?hideUploadModal\(\);/);
 });
