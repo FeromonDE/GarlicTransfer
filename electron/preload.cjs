@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('saveTransfer', {
   chooseAssets: () => ipcRenderer.invoke('dialog:assets'),
   chooseExternalFolder: () => ipcRenderer.invoke('dialog:external-folder'),
   chooseExternalSave: () => ipcRenderer.invoke('dialog:external-save'),
+  chooseExternalZip: (output) => ipcRenderer.invoke('dialog:external-zip', { output }),
+  exportEntryZip: (output, entryId, suggestedName) => ipcRenderer.invoke('dialog:export-zip', { output, entryId, suggestedName }),
   pair: (options) => ipcRenderer.invoke('transfer:pair', options),
   pairingStatus: (identity) => ipcRenderer.invoke('transfer:pair-status', identity),
   download: (options) => ipcRenderer.invoke('transfer:download', options),

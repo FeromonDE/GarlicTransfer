@@ -358,6 +358,8 @@ function createMetadata(options, session) {
       args.push('--other', '--source', sourceMetadata);
     } else {
       args.push('--source', sourceMetadata);
+      if (options.serverUrl) args.push('--server-url', options.serverUrl);
+      if (options.workerKey) args.push('--worker-key', options.workerKey);
     }
     const entryIds = Array.isArray(options.entryIds) ? options.entryIds : [];
     for (const entryId of entryIds) args.push('--entry-id', String(entryId));
@@ -563,6 +565,47 @@ ipcMain.handle('dialog:external-save', async () => {
     filters: [{ name: 'All files', extensions: ['*'] }, { name: 'PS5 save containers', extensions: ['bin', 'img', 'save'] }],
   });
   return result.canceled ? null : result.filePaths[0];
+});
+
+function runExportZip(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(pythonBin(), ['-m', 'poc.dt_export_zip', ...args], {
+      cwd: workDir,
+      env: { ...process.env, PYTHONPATH: resourceRoot },
+    });
+    let output = '';
+    child.stdout.on('data', (data) => { output += data; });
+    child.stderr.on('data', (data) => { output += data; });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code !== 0) return reject(new Error(output.trim() || 'zip operation failed'));
+      try {
+        resolve(JSON.parse(output.trim().split('\n').pop()));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+ipcMain.handle('dialog:export-zip', async (_event, { output, entryId, suggestedName }) => {
+  const result = await dialog.showSaveDialog(window, {
+    defaultPath: suggestedName || `save-entry-${entryId}.zip`,
+    filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  return runExportZip(['export', '--library', output, '--entry-id', String(entryId), '--out', result.filePath]);
+});
+
+ipcMain.handle('dialog:external-zip', async (_event, { output }) => {
+  const result = await dialog.showOpenDialog(window, {
+    properties: ['openFile'],
+    filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const workspace = otherDataPath(output, `external-zip-${Date.now()}`);
+  const { title_id: titleId } = await runExportZip(['extract', '--archive', result.filePaths[0], '--out', workspace]);
+  return { folder: workspace, titleId };
 });
 
 ipcMain.handle('transfer:download', (_event, options) => startDownload(options));

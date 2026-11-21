@@ -244,9 +244,18 @@ def find_downloaded_user(source_metadata, user_id):
         db.close()
 
 
-def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user", manifest_output=None, source_metadata=None):
+def create_metadata(output, user_id, title_id, entry_id, assets, user_name="user", manifest_output=None, source_metadata=None,
+                    server_url=None, worker_key=None):
     """Build save catalogue."""
     user_id = validate_user(user_id, user_name)
+    if server_url and worker_key and entry_id is not None and source_metadata:
+        from poc.dt_resign import auto_resign_entry_if_needed
+        try:
+            entry_id = auto_resign_entry_if_needed(
+                assets, source_metadata, entry_id, user_id, server_url, worker_key
+            )
+        except Exception as exc:
+            raise ValueError(f"auto-resign to {user_id} failed: {exc}") from exc
     target_user = find_downloaded_user(source_metadata, user_id)
     entry_id, upload_entry = load_manifest(assets, entry_id, expected_user_id=user_id)
     persist_manifest_entry(assets, entry_id, upload_entry)
@@ -442,7 +451,8 @@ def load_selected_manifest(assets, entry_id, source_metadata, user_id):
 
 
 def create_filtered_metadata(
-    output, source_metadata, user_id, user_name, entry_ids, assets, manifest_output=None
+    output, source_metadata, user_id, user_name, entry_ids, assets, manifest_output=None,
+    server_url=None, worker_key=None,
 ):
     """Build selected upload catalogue."""
     user_id = validate_user(user_id, user_name)
@@ -450,6 +460,14 @@ def create_filtered_metadata(
         entry_ids = [None]
     upload_entries = {}
     for entry_id in entry_ids:
+        if server_url and worker_key and entry_id is not None:
+            from poc.dt_resign import auto_resign_entry_if_needed
+            try:
+                entry_id = auto_resign_entry_if_needed(
+                    assets, source_metadata, entry_id, user_id, server_url, worker_key
+                )
+            except Exception as exc:
+                raise ValueError(f"auto-resign to {user_id} failed: {exc}") from exc
         actual_id, entry = load_selected_manifest(assets, entry_id, source_metadata, user_id)
         persist_manifest_entry(assets, actual_id, entry)
         upload_entries[actual_id] = entry
@@ -574,6 +592,8 @@ def main():
     parser.add_argument("--manifest-output")
     parser.add_argument("--other", action="store_true", help="preserve non-savedata transfer entries")
     parser.add_argument("--external-image", type=Path, help="encrypted save container to import")
+    parser.add_argument("--server-url", default=None, help="GarlicSaves server URL, for auto-resign on upload")
+    parser.add_argument("--worker-key", default=None, help="GarlicSaves worker key, for auto-resign on upload")
     args = parser.parse_args()
     if args.external_image:
         path = create_external_save(
@@ -590,6 +610,7 @@ def main():
         path = create_filtered_metadata(
             args.output, args.source, args.user_id, args.user_name,
             args.entry_id, args.assets, args.manifest_output,
+            server_url=args.server_url, worker_key=args.worker_key,
         )
     else:
         if len(args.entry_id) > 1:
@@ -598,6 +619,7 @@ def main():
             args.output, args.user_id, args.title_id,
             args.entry_id[0] if args.entry_id else None, args.assets,
             args.user_name, args.manifest_output,
+            server_url=args.server_url, worker_key=args.worker_key,
         )
     print(path)
 

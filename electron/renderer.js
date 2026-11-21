@@ -5,7 +5,7 @@ for (const id of [
   'uiLayout', 'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
-  'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
+  'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
   'consoleSelect', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
@@ -235,6 +235,8 @@ function busy(value, { keepDialogs = false } = {}) {
   controls.uploadBtn.disabled = disabled;
   controls.addExternalSaveBtn.disabled = disabled;
   controls.addExternalFolderBtn.disabled = disabled;
+  controls.addExternalZipBtn.disabled = disabled;
+  controls.exportZipBtn.disabled = disabled;
   controls.externalTitleId.disabled = disabled;
   controls.browseLocalBtn.disabled = disabled;
   controls.confirmImportBtn.disabled = disabled;
@@ -1129,3 +1131,42 @@ async function addExternalUpload(folder = false) {
 }
 controls.addExternalSaveBtn.addEventListener('click', () => addExternalUpload(false));
 controls.addExternalFolderBtn.addEventListener('click', () => addExternalUpload(true));
+
+async function addExternalZip() {
+  const result = await window.saveTransfer.chooseExternalZip(options().output);
+  if (!result) return;
+  externalUploadImage = result.folder;
+  let option = [...controls.uploadSaveSelect.options].find((item) => item.value === 'external');
+  if (!option) {
+    option = document.createElement('option');
+    option.value = 'external';
+    controls.uploadSaveSelect.appendChild(option);
+  }
+  for (const item of controls.uploadSaveSelect.options) item.selected = false;
+  option.textContent = `External: ${result.folder.split(/[\\/]/).pop()}`;
+  option.selected = true;
+  controls.externalTitleId.value = result.titleId || '';
+  renderCmpUpload();
+  status(result.titleId
+    ? `ZIP extracted and added (title ${result.titleId}). Check the destination user, then click Upload.`
+    : 'ZIP extracted and added. Enter the PPSA title ID and destination user, then click Upload.');
+}
+controls.addExternalZipBtn.addEventListener('click', () => addExternalZip());
+
+async function exportSelectedZip() {
+  const selected = [...controls.uploadSaveSelect.selectedOptions].filter((option) => option.value !== 'external');
+  if (selected.length !== 1) {
+    status('Select exactly one downloaded save above, then click Export as ZIP.');
+    return;
+  }
+  const entryId = Number(selected[0].value);
+  const suggestedName = `${controls.externalTitleId.value.trim() || `save-entry-${entryId}`}.zip`;
+  try {
+    const result = await window.saveTransfer.exportEntryZip(options().output, entryId, suggestedName);
+    if (!result) { status('Export canceled.'); return; }
+    status(`Saved ${result.file_count} file(s) (${result.title_id}) to ${result.archive}`);
+  } catch (error) {
+    status(`Could not export ZIP: ${error.message}`);
+  }
+}
+controls.exportZipBtn.addEventListener('click', () => exportSelectedZip());
