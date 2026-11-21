@@ -79,6 +79,14 @@ class PowerIdentityTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<I", body, 76)[0], 0x14220000)
         self.assertEqual(struct.unpack_from("<I", body, 84)[0], 0x14220000)
 
+    def test_1423_request_body_uses_current_product_code(self):
+        body = build_power_request_body(
+            0x14230000, 3, "001122334455", power_request_prefix(ACCOUNT_ID),
+        )
+        self.assertEqual(struct.unpack_from("<I", body, 48)[0], 0x284)
+        self.assertEqual(struct.unpack_from("<I", body, 76)[0], 0x14230000)
+        self.assertEqual(struct.unpack_from("<I", body, 84)[0], 0x14230000)
+
     def test_legacy_body_preserves_upstream_captured_prefix(self):
         body = build_power_request_body(0x13600000, 3, "001122334455", None)
         self.assertEqual(body[:32], CAPTURED_BODY[:32])

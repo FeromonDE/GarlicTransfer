@@ -310,6 +310,14 @@ class UploadLifecycleTests(unittest.TestCase):
         self.assertIn("[data] session ended: connection closed after 0/24 bytes", logs.getvalue())
         self.assertEqual(logs.getvalue().count("[data] completion:"), 3)
 
+    def test_premature_disconnect_finishes_with_an_error(self):
+        source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
+        condition = "!session.transferFinished && !session.rebootRequested && line.includes('[cmd] session ended:')"
+        self.assertIn(condition, source)
+        block = source[source.index(condition):]
+        self.assertIn("finish(new Error('The console closed the connection before any save data was sent.", block)
+        self.assertIn("return;", block)
+
 
 if __name__ == "__main__":
     unittest.main()

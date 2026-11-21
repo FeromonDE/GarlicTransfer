@@ -479,6 +479,10 @@ function startUpload(options) {
           stopActive();
           return;
         }
+        if (!session.transferFinished && !session.rebootRequested && line.includes('[cmd] session ended:')) {
+          finish(new Error('The console closed the connection before any save data was sent. Please retry Data Transfer.'), session);
+          return;
+        }
       }
     });
     child.stderr.on('data', (data) => { if (active === session) send('log', { message: String(data).trim() }); });

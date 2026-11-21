@@ -111,8 +111,8 @@ def build_power_request_body(firmware_version, hardware, host_id_hex, prefix):
     if host_id_hex and len(host_id_hex) == 12:
         body[32:38] = bytes.fromhex(host_id_hex)
     struct.pack_into("<I", body, 44, hardware)
-    # Observed in a console-generated 14.22 request; older templates use 0x282.
-    if firmware_version == 0x14220000:
+    # Observed in console-generated 14.22+ requests; older templates use 0x282.
+    if firmware_version >= 0x14220000:
         struct.pack_into("<I", body, 48, 0x284)
     struct.pack_into("<I", body, 76, firmware_version)
     struct.pack_into("<I", body, 84, firmware_version)
