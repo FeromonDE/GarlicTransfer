@@ -18,6 +18,12 @@ class MacOSPrivilegeTests(unittest.TestCase):
         self.assertIn("DT_PAIRING_GID=${process.getgid()}", source)
         self.assertIn("sys.path.insert(0, ${JSON.stringify(resourceRoot)})", source)
 
+    def test_admin_helper_quotes_environment_values(self):
+        source = Path(__file__).resolve().parent.parent.joinpath("electron", "main.cjs").read_text()
+        helper = source.split("function macOSAdminCommand", 1)[1].split("function startPairing", 1)[0]
+        self.assertIn("`${name}=${shellQuote(value)}`", helper)
+        self.assertNotIn("`${name}=${value}`", helper)
+
 
 if __name__ == "__main__":
     unittest.main()

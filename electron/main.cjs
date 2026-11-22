@@ -159,7 +159,7 @@ function macOSAdminCommand(python, module, extraEnvironment = {}) {
   const code = `import sys, runpy; sys.path.insert(0, ${JSON.stringify(resourceRoot)}); sys.argv = ['${module}', '-']; runpy.run_module('${module}', run_name='__main__')`;
   const assignments = [
     `DT_PAIRING_UID=${process.getuid()}`, `DT_PAIRING_GID=${process.getgid()}`,
-    ...Object.entries(extraEnvironment).map(([name, value]) => `${name}=${value}`),
+    ...Object.entries(extraEnvironment).map(([name, value]) => `${name}=${shellQuote(value)}`),
   ];
   const shell = ['/usr/bin/env', ...assignments, shellQuote(python), '-u', '-c', shellQuote(code)].join(' ');
   return {
