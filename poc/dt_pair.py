@@ -227,7 +227,8 @@ def main():
         pair(json.loads(sys.stdin.readline()))
     except (EOFError, KeyError, OSError, TimeoutError, TypeError, ValueError) as exc:
         # Do not print the console request, pairing prefix, or account identifier.
-        emit("error", message=f"Pairing stopped ({type(exc).__name__}). Check the PS5, network, and oracle.")
+        detail = str(exc) or type(exc).__name__
+        emit("error", message=f"Pairing stopped ({type(exc).__name__}): {detail}")
         raise SystemExit(1)
 
 
