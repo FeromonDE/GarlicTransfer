@@ -6,7 +6,7 @@ for (const id of [
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
-  'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log',
+  'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log', 'saveSearch',
   'consoleSelect', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
   'browseLocalBtn', 'localBrowser', 'localEntries', 'importModal', 'importWarning', 'confirmImportBtn', 'cancelImportBtn',
@@ -203,9 +203,13 @@ async function refreshPairingStatus() {
   }
 }
 
+function saveEntriesMatchingSearch() {
+  return availableEntries.filter((entry) => entry.kind === 'save' && window.DownloadSearch.matches(entry, controls.saveSearch.value, availableUsers));
+}
+
 function updateSelection() {
   const count = selectedEntryIds.size;
-  const visible = cmpLayout.active ? cmpLayout.visibleRemoteEntries() : availableEntries;
+  const visible = cmpLayout.active ? cmpLayout.visibleRemoteEntries() : saveEntriesMatchingSearch();
   const visibleSelected = visible.filter((entry) => selectedEntryIds.has(entry.id)).length;
   controls.entryCount.textContent = cmpLayout.active ? `${count} entries selected · ${visible.length} visible` : count
     ? `${count} of ${availableEntries.length} save(s) selected`
@@ -510,12 +514,12 @@ function renderEntryTable(container, entries, emptyText) {
 
 // Function Classic Save List
 function renderClassicSaveEntries() {
-  renderEntryTable(controls.entries, availableEntries.filter((entry) => entry.kind === 'save'), 'No save entries were found.');
+  renderEntryTable(controls.entries, saveEntriesMatchingSearch(), 'No save entries match your search.');
 }
 
 // Function Inventory List
 function renderEntries() {
-  cmpLayout.setRemote(availableEntries.filter((entry) => entry.kind === 'save'), availableUsers);
+  cmpLayout.setRemote(saveEntriesMatchingSearch(), availableUsers);
   const others = availableEntries.filter((entry) => entry.kind !== 'save');
   if (!cmpLayout.active) renderClassicSaveEntries();
   byId('otherBlock').hidden = !others.length;
@@ -531,6 +535,7 @@ function renderEntries() {
   }
   updateSelection();
 }
+controls.saveSearch.addEventListener('input', renderEntries);
 
 async function browseSaves(forUpload = false) {
   if (accountClosing) return;

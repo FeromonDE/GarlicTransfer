@@ -379,6 +379,7 @@ tr:hover td { background: rgba(255,255,255,.02); }
 .empty { color: var(--text-3); text-align: center; padding: 24px; }
 
 /* ── Browser actions ── */
+.save-search { display: block; margin-bottom: 12px; }
 .browser-actions {
   display: flex;
   align-items: center;
