@@ -36,11 +36,19 @@ class DownloadMetadataTests(unittest.TestCase):
     def test_busy_a0_has_a_finite_timeout(self):
         channel = FakeChannel([0x23])
         with tempfile.TemporaryDirectory() as directory, patch(
-            "poc.dt_download.time.monotonic", side_effect=[0, 120]
+            "poc.dt_download.time.monotonic", side_effect=[0, 600]
         ), patch("poc.dt_download.time.sleep") as sleep:
             with self.assertRaisesRegex(ValueError, "A0 did not complete"):
                 download_metadata(channel, Path(directory))
         sleep.assert_not_called()
+
+    def test_large_library_can_wait_beyond_the_previous_limit(self):
+        channel = FakeChannel([0x23, 0])
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "poc.dt_download.time.monotonic", side_effect=[0, 121]
+        ), patch("poc.dt_download.time.sleep") as sleep:
+            download_metadata(channel, Path(directory))
+        sleep.assert_called_once_with(0.25)
 
 
 if __name__ == "__main__":

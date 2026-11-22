@@ -17,6 +17,7 @@ from poc.dt_psk_client import command_header, derive_keys, recv_exact, recv_reco
 
 SRCH = b"SRCH * HTTP/1.1\ndevice-discovery-protocol-version:00030000\n"
 LAUNCH4 = b"LAUNCH4 * HTTP/1.1\ndevice-discovery-protocol-version:00030000\n"
+A0_TIMEOUT_SECONDS = int(os.environ.get("DT_A0_TIMEOUT_SECONDS", "600"))
 
 
 def launch_console(host, skip_launch=False):
@@ -116,7 +117,7 @@ class DtChannel:
 def download_metadata(channel, output):
     """Download console catalogue."""
     sub = channel.request(0xA0, struct.pack("<Q", 11))
-    deadline = time.monotonic() + 120
+    deadline = time.monotonic() + A0_TIMEOUT_SECONDS
     while True:
         result, _ = channel.response(0xA0, sub)
         if result == 0:
