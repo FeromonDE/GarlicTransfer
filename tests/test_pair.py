@@ -193,7 +193,8 @@ class PairTests(unittest.TestCase):
                     result["error"] = exc
 
             with patch("poc.dt_pair.emit", emit), \
-                 patch("poc.dt_pair.receive_prefix", return_value=(bytes(32), bytes.fromhex("000000000001"))):
+                 patch("poc.dt_pair.receive_prefix", return_value=(bytes(32), bytes.fromhex("000000000001"))), \
+                 patch("poc.dt_pair.sys.platform", "darwin"):
                 worker = threading.Thread(target=run_pair, daemon=True)
                 worker.start()
                 self.assertTrue(ready.wait(2))

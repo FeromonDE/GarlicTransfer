@@ -151,24 +151,6 @@ function startDownload(options) {
   })().catch((error) => finish(error, session));
 }
 
-function shellQuote(value) {
-  return `'${String(value).replaceAll("'", "'\\''")}'`;
-}
-
-function macOSAdminCommand(python, module, extraEnvironment = {}) {
-  const code = `import sys, runpy; sys.path.insert(0, ${JSON.stringify(resourceRoot)}); sys.argv = ['${module}', '-']; runpy.run_module('${module}', run_name='__main__')`;
-  const assignments = [
-    `DT_PAIRING_UID=${process.getuid()}`, `DT_PAIRING_GID=${process.getgid()}`,
-    ...Object.entries(extraEnvironment).map(([name, value]) => `${name}=${shellQuote(value)}`),
-  ];
-  const shell = ['/usr/bin/env', ...assignments, shellQuote(python), '-u', '-c', shellQuote(code)].join(' ');
-  return {
-    command: '/usr/bin/osascript',
-    args: ['-e', `do shell script ${JSON.stringify(shell)} with administrator privileges`],
-    environment: process.env,
-  };
-}
-
 function startPairing(options) {
   if (active) throw new Error('another transfer is already running');
   if (net.isIP(options.clientHost) !== 4) throw new Error('Discover and select a PS5 IPv4 address first');
@@ -196,10 +178,6 @@ function startPairing(options) {
         `import sys, runpy; sys.path.insert(0, ${JSON.stringify(resourceRoot)}); sys.argv = ['poc.dt_pair', '-']; runpy.run_module('poc.dt_pair', run_name='__main__')`,
       ];
       environment = process.env;
-    }
-    if (process.platform === 'darwin' && process.getuid() !== 0) {
-      ({ command, args, environment } = macOSAdminCommand(python, 'poc.dt_pair'));
-      send('log', { message: '[privilege] authenticate to bind Data Transfer ports 1004–1006' });
     }
     const child = spawn(command, args, {
       cwd: workDir,
@@ -446,7 +424,7 @@ function startUpload(options) {
     if (options.systemVersion) {
       sourceEnvironment.DT_SYSTEM_VERSION = String(options.systemVersion);
     }
-    const needsRoot = (process.platform === 'linux' || process.platform === 'darwin') && process.getuid() !== 0 &&
+    const needsRoot = process.platform === 'linux' && process.getuid() !== 0 &&
       [sourceEnvironment.DT_PORT, sourceEnvironment.DT_DATA_PORT, sourceEnvironment.DT_DISCOVERY_PORT]
         .some((port) => Number(port) < 1024);
     const python = pythonBin();
@@ -454,17 +432,13 @@ function startUpload(options) {
     let args = ['-u', '-m', 'poc.dt_source'];
     let environment = { ...process.env, PYTHONPATH: resourceRoot, ...sourceEnvironment };
     if (needsRoot) {
-      if (process.platform === 'darwin') {
-        ({ command, args, environment } = macOSAdminCommand(python, 'poc.dt_source', sourceEnvironment));
-      } else {
-        command = 'pkexec';
-        args = [
-          '/usr/bin/env', `PYTHONPATH=${resourceRoot}`,
-          ...Object.entries(sourceEnvironment).map(([name, value]) => `${name}=${value}`),
-          python, '-u', '-m', 'poc.dt_source',
-        ];
-        environment = process.env;
-      }
+      command = 'pkexec';
+      args = [
+        '/usr/bin/env', `PYTHONPATH=${resourceRoot}`,
+        ...Object.entries(sourceEnvironment).map(([name, value]) => `${name}=${value}`),
+        python, '-u', '-m', 'poc.dt_source',
+      ];
+      environment = process.env;
       send('log', { message: '[privilege] authenticate to bind Data Transfer ports 1004–1006' });
     }
     const child = spawn(command, args, { cwd: workDir, env: environment });

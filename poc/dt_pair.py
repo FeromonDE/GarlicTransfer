@@ -181,12 +181,15 @@ def drop_privileges_from_environment():
 
 def pair(options, discovery_port=1006, command_port=1004, bind_ip=None):
     ps5_ip, host_id, system_version, oracle_host, oracle_port, destination, duration = validate_options(options)
-    bind_ip = bind_ip or local_ipv4_for(ps5_ip)
+    advertise_ip = bind_ip or local_ipv4_for(ps5_ip)
+    listen_ip = "0.0.0.0" if sys.platform == "darwin" else advertise_ip
     deadline = time.monotonic() + duration
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as discovery, \
          socket.socket(socket.AF_INET, socket.SOCK_STREAM) as command:
+        discovery.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        command.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         discovery.bind(("0.0.0.0", discovery_port))
-        command.bind((bind_ip, command_port))
+        command.bind((listen_ip, command_port))
         command.listen(1)
         drop_privileges_from_environment()
         emit("status", message="Pairing listener ready. Select GarlicTransfer Pairing on the PS5.")
@@ -202,7 +205,7 @@ def pair(options, discovery_port=1006, command_port=1004, bind_ip=None):
                     packet, address = discovery.recvfrom(4096)
                     if address[0] != ps5_ip:
                         continue
-                    reply = discovery_reply(packet.split(b" ", 1)[0], bind_ip, system_version, command_port)
+                    reply = discovery_reply(packet.split(b" ", 1)[0], advertise_ip, system_version, command_port)
                     if reply is not None:
                         discovery.sendto(reply, address)
                 else:
