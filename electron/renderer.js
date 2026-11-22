@@ -1,8 +1,11 @@
 const folderPaths = window.transferFolders;
+const { t: uiText } = window.GarlicI18n;
+window.GarlicI18n.setLanguage(new URLSearchParams(location.search).get('language'));
+window.GarlicI18n.localizeDocument(document);
 const byId = (id) => document.getElementById(id);
 const controls = {};
 for (const id of [
-  'uiLayout', 'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
+  'uiLayout', 'uiLanguage', 'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
@@ -16,6 +19,7 @@ let accountClosing = false;
 let discoveryPending = false;
 let manualConnectionPending = false;
 let firewallPending = false;
+let settingsSaving = false;
 let pendingImport = null;
 let externalUploadImage = null;
 let availableUsers = [];
@@ -73,7 +77,7 @@ controls.uploadSaveSelect.addEventListener('change', uploadTree.updateSelection)
 // Mirror connection settings.
 function updateCmpConnection() {
   const selected = controls.consoleSelect.selectedOptions[0];
-  byId('cmpTarget').textContent = selected?.value ? selected.textContent : 'Locate a PS5 to begin';
+  byId('cmpTarget').textContent = selected?.value ? selected.textContent : uiText('Locate a PS5 to begin');
   byId('cmpOracleHost').value = controls.oracleHost.value;
   byId('cmpWorker').checked = controls.useRemoteOracle.checked;
   byId('cmpOracleHost').disabled = accountClosing || controls.useRemoteOracle.checked || Boolean(activeTransfer);
@@ -102,12 +106,12 @@ controls.externalTitleId.addEventListener('input', renderCmpUpload);
 // Function Confirmation
 async function confirmAction(message) {
   if (typeof window.saveTransfer.confirm !== 'function') {
-    status('Confirmation is unavailable. Restart GarlicTransfer and try again.');
+    status(uiText('Confirmation is unavailable. Restart GarlicTransfer and try again.'));
     return false;
   }
   try { return await window.saveTransfer.confirm(message) === true; }
   catch (error) {
-    status(`Could not show confirmation: ${error.message}`);
+    status(uiText`Could not show confirmation: ${error.message}`);
     return false;
   }
 }
@@ -160,10 +164,10 @@ function updateSidebarConsole() {
     badge.classList.toggle('connected', connected);
     byId('sidebarConsoleName').textContent = connected
       ? selected.textContent.split(' — ')[0].trim()
-      : 'Not connected';
+      : uiText('Not connected');
     byId('sidebarConsoleDetail').textContent = connected
       ? selected.value
-      : 'Discover a PS5 to begin';
+      : uiText('Discover a PS5 to begin');
   }
 }
 
@@ -188,17 +192,17 @@ async function refreshPairingStatus() {
   controls.pairingState.classList.remove('paired');
   controls.pairBtn.disabled = accountClosing || !supported || Boolean(activeTransfer) || browseSessionActive;
   controls.pairingState.textContent = supported
-    ? 'Checking whether this PS5 has been paired…'
-    : 'Discover a PS5 to check pairing.';
+    ? uiText('Checking whether this PS5 has been paired…')
+    : uiText('Discover a PS5 to check pairing.');
   if (!supported) return;
   try {
     const paired = await window.saveTransfer.pairingStatus(identity);
     if (controls.consoleSelect.selectedOptions[0] !== selected) return;
-    controls.pairingState.textContent = paired ? 'Paired!' : 'Not paired yet. Pair this PS5 to continue.';
+    controls.pairingState.textContent = paired ? uiText('Paired!') : uiText('Not paired yet. Pair this PS5 to continue.');
     controls.pairingState.classList.toggle('paired', paired);
   } catch (error) {
     if (controls.consoleSelect.selectedOptions[0] === selected) {
-      controls.pairingState.textContent = `Could not check pairing: ${error.message}`;
+      controls.pairingState.textContent = uiText`Could not check pairing: ${error.message}`;
     }
   }
 }
@@ -211,9 +215,9 @@ function updateSelection() {
   const count = selectedEntryIds.size;
   const visible = cmpLayout.active ? cmpLayout.visibleRemoteEntries() : saveEntriesMatchingSearch();
   const visibleSelected = visible.filter((entry) => selectedEntryIds.has(entry.id)).length;
-  controls.entryCount.textContent = cmpLayout.active ? `${count} entries selected · ${visible.length} visible` : count
-    ? `${count} of ${availableEntries.length} save(s) selected`
-    : `${availableEntries.length} save(s); none selected`;
+  controls.entryCount.textContent = cmpLayout.active ? uiText`${count} entries selected · ${visible.length} visible` : count
+    ? uiText`${count} of ${availableEntries.length} save(s) selected`
+    : uiText`${availableEntries.length} save(s); none selected`;
   controls.selectAllEntries.checked = visibleSelected > 0 && visibleSelected === visible.length;
   controls.selectAllEntries.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
   controls.selectAllEntries.disabled = accountClosing || Boolean(activeTransfer) || !visible.length;
@@ -254,7 +258,7 @@ function busy(value, { keepDialogs = false } = {}) {
   controls.consoleSelect.disabled = disabled || browseSessionActive;
   controls.discoverBtn.disabled = disabled || browseSessionActive || discoveryPending;
   controls.manualConnectBtn.disabled = disabled || browseSessionActive || manualConnectionPending;
-  controls.settingsSave.disabled = accountClosing;
+  controls.settingsSave.disabled = accountClosing || settingsSaving;
   controls.firewallHelperBtn.disabled = accountClosing || firewallPending;
   for (const button of document.querySelectorAll('[data-action="output"], [data-action="metadata"], [data-action="assets"]')) button.disabled = accountClosing;
   if (!value && !keepDialogs) {
@@ -333,14 +337,14 @@ function localEntryTitle(entry) {
 function renderLocalEntries(entries) {
   controls.localEntries.replaceChildren();
   if (!entries.length) {
-    controls.localEntries.innerHTML = '<tr><td colspan="5" class="empty">No downloaded saves were found.</td></tr>';
+    renderEntryTable(controls.localEntries, [], uiText('No downloaded saves were found.'));
     return;
   }
   for (const entry of entries) {
     for (const file of entry.files) {
       const row = document.createElement('tr');
       const title = document.createElement('td');
-      title.textContent = `${localEntryTitle(entry)} · entry ${entry.id}`;
+      title.textContent = uiText`${localEntryTitle(entry)} · entry ${entry.id}`;
       const owner = document.createElement('td');
       owner.textContent = entry.owner;
       const name = document.createElement('td');
@@ -351,12 +355,12 @@ function renderLocalEntries(entries) {
       const exportButton = document.createElement('button');
       exportButton.type = 'button';
       exportButton.className = 'local-action';
-      exportButton.textContent = 'Export';
+      exportButton.textContent = uiText('Export');
       exportButton.addEventListener('click', () => exportLocalSave(entry, file));
       const importButton = document.createElement('button');
       importButton.type = 'button';
       importButton.className = 'local-action';
-      importButton.textContent = 'Import';
+      importButton.textContent = uiText('Import');
       importButton.addEventListener('click', () => chooseImportReplacement(entry, file));
       actions.append(exportButton, importButton);
       row.append(title, owner, name, size, actions);
@@ -378,21 +382,21 @@ async function refreshLocalSaves() {
 async function browseLocalSaves() {
   if (accountClosing) return;
   if (!options().clientHost) {
-    status('Discover your console first.');
+    status(uiText('Discover your console first.'));
     return;
   }
   if (activeTransfer || browseSessionActive) {
-    status('Stop the active transfer before changing local saves.');
+    status(uiText('Stop the active transfer before changing local saves.'));
     return;
   }
   activeTransfer = 'local';
   busy(true);
   try {
     const { count, warnings } = await refreshLocalSaves();
-    const warning = warnings.length ? ` Skipped ${warnings.length} invalid manifest(s): ${warnings.join('; ')}` : '';
-    status(`Found ${count} downloaded file(s). Export a copy or import a replacement.${warning}`);
+    const warning = warnings.length ? uiText` Skipped ${warnings.length} invalid manifest(s): ${warnings.join('; ')}` : '';
+    status(uiText`Found ${count} downloaded file(s). Export a copy or import a replacement.${warning}`);
   } catch (error) {
-    status(`Could not browse local saves: ${error.message}`);
+    status(uiText`Could not browse local saves: ${error.message}`);
   } finally {
     activeTransfer = null;
     busy(false);
@@ -410,9 +414,9 @@ async function exportLocalSave(entry, file) {
       entryId: entry.id,
       filename: file.file,
     });
-    if (result) status(`Exported ${file.file} to ${result.destination}`);
+    if (result) status(uiText`Exported ${file.file} to ${result.destination}`);
   } catch (error) {
-    status(`Could not export ${file.file}: ${error.message}`);
+    status(uiText`Could not export ${file.file}: ${error.message}`);
   } finally {
     activeTransfer = null;
     busy(false);
@@ -425,8 +429,8 @@ async function chooseImportReplacement(entry, file) {
   if (accountClosing || !source) return;
   pendingImport = { assets: options().assets, ...(entry.localSource === 'pc' ? { localSource: 'pc' } : {}), entryId: entry.id, filename: file.file, source };
   controls.importWarning.textContent = entry.localSource === 'pc'
-    ? `This will replace ${file.file}. A backup will be kept before replacement. Continue?`
-    : `This will replace ${file.file}. Make sure you have backed it up. Are you sure you want to do this?`;
+    ? uiText`This will replace ${file.file}. A backup will be kept before replacement. Continue?`
+    : uiText`This will replace ${file.file}. Make sure you have backed it up. Are you sure you want to do this?`;
   if (!controls.importModal.open) controls.importModal.showModal();
 }
 
@@ -440,10 +444,10 @@ controls.confirmImportBtn.addEventListener('click', async () => {
   try {
     await window.saveTransfer.importLocalSave(replacement);
     if (replacement.localSource !== 'pc') await refreshLocalSaves();
-    status(replacement.localSource === 'pc' ? `Replaced ${replacement.filename}. A backup is available.` : `Replaced ${replacement.filename} and refreshed its upload metadata.`);
+    status(replacement.localSource === 'pc' ? uiText`Replaced ${replacement.filename}. A backup is available.` : uiText`Replaced ${replacement.filename} and refreshed its upload metadata.`);
     document.dispatchEvent(new CustomEvent('local-save-replaced', { detail: replacement }));
   } catch (error) {
-    status(`Could not replace ${replacement.filename}: ${error.message}`);
+    status(uiText`Could not replace ${replacement.filename}: ${error.message}`);
   } finally {
     activeTransfer = null;
     busy(false);
@@ -454,7 +458,10 @@ controls.cancelImportBtn.addEventListener('click', hideImportModal);
 function renderEntryTable(container, entries, emptyText) {
   container.replaceChildren();
   if (!entries.length) {
-    container.innerHTML = `<tr><td colspan="5" class="empty">${emptyText}</td></tr>`;
+    const cell = container.insertRow().insertCell();
+    cell.colSpan = 5;
+    cell.className = 'empty';
+    cell.textContent = emptyText;
     return;
   }
   const userNames = new Map(availableUsers.map((user) => [user.id.toLowerCase(), user.name]));
@@ -466,7 +473,7 @@ function renderEntryTable(container, entries, emptyText) {
     checkbox.type = 'checkbox';
     checkbox.className = 'entry-check';
     checkbox.checked = selectedEntryIds.has(entry.id);
-    checkbox.setAttribute('aria-label', `Select ${entry.name || entry.title}`);
+    checkbox.setAttribute('aria-label', uiText`Select ${entry.name || entry.title}`);
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) selectedEntryIds.add(entry.id);
       else selectedEntryIds.delete(entry.id);
@@ -478,10 +485,10 @@ function renderEntryTable(container, entries, emptyText) {
     const titleCell = document.createElement('td');
     const name = document.createElement('span');
     name.className = 'title-name';
-    name.textContent = entry.name || 'Unknown title';
+    name.textContent = entry.name || uiText('Unknown title');
     const titleId = document.createElement('span');
     titleId.className = 'title-id';
-    titleId.textContent = `${entry.title} · ${entry.kind || 'save'} · entry ${entry.id}`;
+    titleId.textContent = uiText`${entry.title} · ${entry.kind || 'save'} · entry ${entry.id}`;
     titleCell.append(name, titleId);
     row.appendChild(titleCell);
 
@@ -498,13 +505,13 @@ function renderEntryTable(container, entries, emptyText) {
     const download = document.createElement('button');
     download.type = 'button';
     download.className = 'row-download';
-    download.textContent = downloadedEntryIds.has(entry.id) ? 'Download again' : 'Download';
+    download.textContent = downloadedEntryIds.has(entry.id) ? uiText('Download again') : uiText('Download');
     download.addEventListener('click', () => startDownload([entry.id]));
     actionCell.appendChild(download);
     if (downloadedEntryIds.has(entry.id)) {
       const downloaded = document.createElement('span');
       downloaded.className = 'downloaded';
-      downloaded.textContent = 'Downloaded';
+      downloaded.textContent = uiText('Downloaded');
       actionCell.appendChild(downloaded);
     }
     row.appendChild(actionCell);
@@ -514,7 +521,7 @@ function renderEntryTable(container, entries, emptyText) {
 
 // Function Classic Save List
 function renderClassicSaveEntries() {
-  renderEntryTable(controls.entries, saveEntriesMatchingSearch(), 'No save entries match your search.');
+  renderEntryTable(controls.entries, saveEntriesMatchingSearch(), uiText('No save entries match your search.'));
 }
 
 // Function Inventory List
@@ -531,7 +538,7 @@ function renderEntries() {
   ]) {
     const entries = others.filter((entry) => entry.kind === kind);
     byId(block).hidden = !entries.length;
-    renderEntryTable(control, entries, `No ${kind} entries were found.`);
+    renderEntryTable(control, entries, uiText`No ${kind} entries were found.`);
   }
   updateSelection();
 }
@@ -540,21 +547,21 @@ controls.saveSearch.addEventListener('input', renderEntries);
 async function browseSaves(forUpload = false) {
   if (accountClosing) return;
   if (!forUpload && browseSessionActive) {
-    status('The download session is already open. Select saves from the browser.');
+    status(uiText('The download session is already open. Select saves from the browser.'));
     return;
   }
   const current = options();
   if (!current.clientHost) {
-    status('Discover and select a console first.');
+    status(uiText('Discover and select a console first.'));
     return;
   }
   pendingBrowserHost = current.clientHost;
   activeTransfer = forUpload ? 'upload-metadata' : 'browse';
   busy(true);
-  status('Step 1/3: downloading the console save list.');
+  status(uiText('Step 1/3: downloading the console save list.'));
   if (!forUpload) {
     byId('saveBrowser').hidden = true;
-    if (!cmpLayout.active) controls.entries.innerHTML = '<tr><td colspan="5" class="empty">Downloading metadata…</td></tr>';
+    if (!cmpLayout.active) renderEntryTable(controls.entries, [], uiText('Downloading metadata…'));
   }
   try {
     await window.saveTransfer.download({
@@ -564,7 +571,7 @@ async function browseSaves(forUpload = false) {
       entryIds: [],
     });
   } catch (error) {
-    status(`Could not browse saves: ${error.message}`);
+    status(uiText`Could not browse saves: ${error.message}`);
     activeTransfer = null;
     busy(false);
   }
@@ -573,21 +580,21 @@ async function browseSaves(forUpload = false) {
 async function startDownload(entryIds) {
   if (accountClosing) return;
   if (!entryIds.length) {
-    status('Select at least one save to download.');
+    status(uiText('Select at least one save to download.'));
     return;
   }
   if (!browseSessionActive) {
-    status('The download session is not open. Browse the console again first.');
+    status(uiText('The download session is not open. Browse the console again first.'));
     return;
   }
   requestedDownloadIds = entryIds;
   activeTransfer = 'download';
   busy(true);
-  status(`Downloading ${entryIds.length} selected save(s) on the open Data Transfer session.`);
+  status(uiText`Downloading ${entryIds.length} selected save(s) on the open Data Transfer session.`);
   try {
     await window.saveTransfer.select(entryIds);
   } catch (error) {
-    status(`Could not start download: ${error.message}`);
+    status(uiText`Could not start download: ${error.message}`);
     activeTransfer = null;
     browseSessionActive = false;
     browseSessionVersion++;
@@ -602,11 +609,11 @@ async function startUploadSource() {
   const entryIds = [...controls.uploadSaveSelect.selectedOptions].filter((option) => option.value !== 'external').map((option) => Number(option.value));
   const titleId = controls.externalTitleId.value.trim().toUpperCase();
   if (externalSelected && (entryIds.length || !externalUploadImage || !/^PPSA[0-9]{5}$/.test(titleId))) {
-    status('Select the external save by itself and enter its PPSA title ID (for example PPSA12345).');
+    status(uiText('Select the external save by itself and enter its PPSA title ID (for example PPSA12345).'));
     return;
   }
   if (!selectedUser || (!entryIds.length && !externalSelected)) {
-    status('Select one user and at least one downloaded entry before continuing.');
+    status(uiText('Select one user and at least one downloaded entry before continuing.'));
     return;
   }
   const uploadKinds = new Set(entryIds.map((id) => {
@@ -614,7 +621,7 @@ async function startUploadSource() {
     return entry?.kind === 'save' ? 'save' : 'other';
   }));
   if (!externalSelected && uploadKinds.size !== 1) {
-    status('Upload saves and other content in separate batches.');
+    status(uiText('Upload saves and other content in separate batches.'));
     return;
   }
   const current = {
@@ -634,11 +641,11 @@ async function startUploadSource() {
   controls.confirmUploadBtn.hidden = true;
   controls.userSelectLabel.hidden = true;
   controls.uploadSaveSelectLabel.hidden = true;
-  status(`Step 1/3: building metadata for ${externalSelected ? 1 : entryIds.length} entries.`);
+  status(uiText`Step 1/3: building metadata for ${externalSelected ? 1 : entryIds.length} entries.`);
   try {
     await window.saveTransfer.upload(current);
   } catch (error) {
-    status(`Could not start upload: ${error.message}`);
+    status(uiText`Could not start upload: ${error.message}`);
     activeTransfer = null;
     resetUploadUI();
     busy(false);
@@ -669,7 +676,7 @@ function showUploadConfirmation() {
   for (const entry of downloadedEntries) {
     const option = document.createElement('option');
     option.value = entry.id;
-    option.textContent = `${entry.name || entry.title} (${entry.title}) — ${entry.owner} — entry ${entry.id}`;
+    option.textContent = uiText`${entry.name || entry.title} (${entry.title}) — ${entry.owner} — entry ${entry.id}`;
     controls.uploadSaveSelect.appendChild(option);
   }
   if (pendingUploadEntryIds) {
@@ -682,21 +689,21 @@ function showUploadConfirmation() {
     externalUploadImage = pendingExternalUpload.folder;
     controls.externalTitleId.value = pendingExternalUpload.titleId;
     const option = document.createElement('option'); option.value = 'external';
-    option.textContent = `Local PC: ${pendingExternalUpload.titleId}`;
+    option.textContent = uiText`Local PC: ${pendingExternalUpload.titleId}`;
     controls.uploadSaveSelect.appendChild(option);
     for (const item of controls.uploadSaveSelect.options) item.selected = item === option;
     pendingExternalUpload = null;
   }
   if (!availableUsers.length) {
     resetUploadUI();
-    status('No downloaded files are available. Download content before uploading it.');
+    status(uiText('No downloaded files are available. Download content before uploading it.'));
     return;
   }
   controls.userSelectLabel.hidden = false;
   controls.uploadSaveSelectLabel.hidden = false;
   controls.confirmUploadBtn.hidden = false;
   renderCmpUpload();
-  status('Select downloaded entries, or add an external encrypted save.');
+  status(uiText('Select downloaded entries, or add an external encrypted save.'));
 }
 
 // Prepare upload selection.
@@ -713,7 +720,7 @@ async function startUpload({ entryIds = null, userId = null, external = null } =
   const current = options();
   if (!current.clientHost) {
     resetUploadUI();
-    status('Discover and select a console first.');
+    status(uiText('Discover and select a console first.'));
     return;
   }
   byId('uploadDestination').hidden = false;
@@ -742,7 +749,7 @@ async function startUpload({ entryIds = null, userId = null, external = null } =
     if (accountClosing) { await releasePcUpload(); return; }
     if (hasExplicitMetadata) {
       resetUploadUI();
-      status(`Could not read metadata inventory: ${error.message}`);
+      status(uiText`Could not read metadata inventory: ${error.message}`);
       return;
     }
     appendLog(`[metadata] no usable previous metadata at ${previousMetadata}; fetching from console`);
@@ -750,11 +757,11 @@ async function startUpload({ entryIds = null, userId = null, external = null } =
   pendingBrowserHost = current.clientHost;
   activeTransfer = 'upload-metadata';
   busy(true);
-  status('Step 1/3: fetching the client user and save list before upload.');
+  status(uiText('Step 1/3: fetching the client user and save list before upload.'));
   try {
     await window.saveTransfer.download({ ...current, metadataOnly: true, entryIds: [] });
   } catch (error) {
-    status(`Could not fetch metadata: ${error.message}`);
+    status(uiText`Could not fetch metadata: ${error.message}`);
     activeTransfer = null;
     resetUploadUI();
     busy(false);
@@ -783,6 +790,7 @@ function showPage(name) {
 for (const btn of document.querySelectorAll('.nav-item')) {
   btn.addEventListener('click', () => showPage(btn.dataset.page));
 }
+if (new URLSearchParams(location.search).get('page') === 'settings') showPage('settings');
 
 byId('logToggle').addEventListener('click', () => {
   byId('logDock').classList.toggle('expanded');
@@ -792,7 +800,7 @@ controls.discoverBtn.addEventListener('click', async () => {
   if (accountClosing || discoveryPending) return;
   discoveryPending = true;
   controls.discoverBtn.disabled = true;
-  status('Discovering consoles with SRCH…');
+  status(uiText('Discovering consoles with SRCH…'));
   try {
     const consoles = await window.saveTransfer.discover(options());
     if (accountClosing) return;
@@ -808,15 +816,15 @@ controls.discoverBtn.addEventListener('click', async () => {
     if (!consoles.length) {
       const option = document.createElement('option');
       option.value = '';
-      option.textContent = 'No consoles found';
+      option.textContent = uiText('No consoles found');
       controls.consoleSelect.appendChild(option);
     }
     applyConsoleProfile();
     status(consoles.length
-      ? `Found ${consoles.length} console(s). Each console uses its own metadata profile.`
-      : 'No consoles found. Check the network and firewall.');
+      ? uiText`Found ${consoles.length} console(s). Each console uses its own metadata profile.`
+      : uiText('No consoles found. Check the network and firewall.'));
   } catch (error) {
-    status(`Discovery failed: ${error.message}`);
+    status(uiText`Discovery failed: ${error.message}`);
   } finally {
     discoveryPending = false;
     controls.discoverBtn.disabled = accountClosing || Boolean(activeTransfer) || browseSessionActive;
@@ -827,17 +835,17 @@ controls.manualConnectBtn.addEventListener('click', async () => {
   if (accountClosing || manualConnectionPending) return;
   const host = controls.manualHost.value.trim();
   if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
-    status('Enter a valid PS5 IPv4 address.');
+    status(uiText('Enter a valid PS5 IPv4 address.'));
     return;
   }
   manualConnectionPending = true;
   controls.manualConnectBtn.disabled = true;
-  status(`Contacting PS5 at ${host}…`);
+  status(uiText`Contacting PS5 at ${host}…`);
   try {
     const consoles = await window.saveTransfer.discover({ ...options(), targetHost: host });
     if (accountClosing) return;
     if (!consoles.length) {
-      status(`No PS5 responded at ${host}. Check the address and network.`);
+      status(uiText`No PS5 responded at ${host}. Check the address and network.`);
       return;
     }
     controls.consoleSelect.replaceChildren();
@@ -850,20 +858,48 @@ controls.manualConnectBtn.addEventListener('click', async () => {
       controls.consoleSelect.appendChild(option);
     }
     applyConsoleProfile();
-    status(`Using ${consoles[0].name} at ${host} (${formatFirmware(consoles[0].firmware)}).`);
+    status(uiText`Using ${consoles[0].name} at ${host} (${formatFirmware(consoles[0].firmware)}).`);
   } catch (error) {
-    status(`Could not use ${host}: ${error.message}`);
+    status(uiText`Could not use ${host}: ${error.message}`);
   } finally {
     manualConnectionPending = false;
     controls.manualConnectBtn.disabled = accountClosing || Boolean(activeTransfer) || browseSessionActive;
   }
 });
 
+function canReloadLanguage() {
+  return !accountClosing && !activeTransfer && !browseSessionActive && !finishConfirmationPending
+    && !discoveryPending && !manualConnectionPending && !firewallPending && !decryptedWorkspace
+    && !document.querySelector('dialog[open]');
+}
+
 controls.settingsSave.addEventListener('click', async () => {
-  if (accountClosing) return;
-  const current = options();
-  await window.saveTransfer.saveSettings({ ...current, output: profileRoot || current.output });
-  controls.settingsStatus.textContent = 'Settings saved to config.ini.';
+  if (accountClosing || settingsSaving) return;
+  settingsSaving = true;
+  controls.settingsSave.disabled = true;
+  let languageChanged = false;
+  try {
+    const current = options();
+    languageChanged = await window.saveTransfer.saveSettings({
+      ...current, output: profileRoot || current.output, uiLanguage: controls.uiLanguage.value,
+    });
+    controls.settingsStatus.textContent = uiText('Settings saved to config.ini.');
+    if (!languageChanged) return;
+
+    const deferred = uiText('Language saved. Finish the current work and save settings again to apply it.');
+    if (canReloadLanguage()) {
+      await savedAccounts?.prepareClose();
+      if (canReloadLanguage() && await window.saveTransfer.reloadLanguage()) return;
+    }
+    controls.settingsStatus.textContent = deferred;
+  } catch (error) {
+    controls.settingsStatus.textContent = languageChanged
+      ? uiText`Language saved, but could not reload: ${error.message}`
+      : uiText`Could not save settings: ${error.message}`;
+  } finally {
+    settingsSaving = false;
+    controls.settingsSave.disabled = accountClosing;
+  }
 });
 
 controls.firewallSettings.hidden = !window.saveTransfer.firewallAvailable;
@@ -871,12 +907,12 @@ controls.firewallHelperBtn.addEventListener('click', async () => {
   if (accountClosing || firewallPending) return;
   firewallPending = true;
   controls.firewallHelperBtn.disabled = true;
-  controls.firewallStatus.textContent = 'Opening the firewall helper…';
+  controls.firewallStatus.textContent = uiText('Opening the firewall helper…');
   try {
     await window.saveTransfer.runFirewallHelper();
-    controls.firewallStatus.textContent = 'Accept the Windows permission prompt. The helper will attach to GarlicTransfer and remove its rules when the app closes.';
+    controls.firewallStatus.textContent = uiText('Accept the Windows permission prompt. The helper will attach to GarlicTransfer and remove its rules when the app closes.');
   } catch (error) {
-    controls.firewallStatus.textContent = `Could not open the firewall helper: ${error.message}`;
+    controls.firewallStatus.textContent = uiText`Could not open the firewall helper: ${error.message}`;
   } finally {
     firewallPending = false;
     controls.firewallHelperBtn.disabled = accountClosing;
@@ -906,20 +942,20 @@ controls.pairBtn.addEventListener('click', async () => {
   if (accountClosing) return;
   const current = options();
   if (!current.clientHost) {
-    status('Discover and select the PS5 first.');
+    status(uiText('Discover and select the PS5 first.'));
     return;
   }
   activeTransfer = 'pair';
   showPairingModal();
   busy(true);
-  status('Starting the pairing listener. Follow the instructions in the pairing window.');
+  status(uiText('Starting the pairing listener. Follow the instructions in the pairing window.'));
   try {
     await window.saveTransfer.pair(current);
   } catch (error) {
     activeTransfer = null;
     hidePairingModal();
     busy(false);
-    status(`Could not start pairing: ${error.message}`);
+    status(uiText`Could not start pairing: ${error.message}`);
   }
 });
 
@@ -928,7 +964,7 @@ controls.pairingCancelBtn.addEventListener('click', async () => {
   activeTransfer = null;
   hidePairingModal();
   busy(false);
-  status('Pairing cancelled.');
+  status(uiText('Pairing cancelled.'));
 });
 
 controls.uploadModalCloseBtn.addEventListener('click', hideUploadModal);
@@ -952,15 +988,15 @@ controls.finishBtn.addEventListener('click', async () => {
   const version = browseSessionVersion;
   controls.finishBtn.disabled = true;
   try {
-    if (!await confirmAction('Close Data Transfer and reboot the console now?')) return;
+    if (!await confirmAction(uiText('Close Data Transfer and reboot the console now?'))) return;
     if (accountClosing || !browseSessionActive || activeTransfer || version !== browseSessionVersion) return;
     activeTransfer = 'finish';
     busy(true);
-    status('Sending DisconnectPS5. The console will reboot.');
+    status(uiText('Sending DisconnectPS5. The console will reboot.'));
     await window.saveTransfer.finish();
   } catch (error) {
     activeTransfer = null;
-    status(`Could not finish the download session: ${error.message}`);
+    status(uiText`Could not finish the download session: ${error.message}`);
     busy(false);
   } finally {
     finishConfirmationPending = false;
@@ -979,13 +1015,13 @@ controls.cancelBtn.addEventListener('click', async () => {
   browseSessionActive = false;
   browseSessionVersion++;
   busy(false);
-  status('Transfer cancelled.');
+  status(uiText('Transfer cancelled.'));
 });
 controls.powerBtn.addEventListener('click', async () => {
   if (accountClosing) return;
   await window.saveTransfer.power();
   controls.powerBtn.hidden = true;
-  status('Power signal sent. Continue the transfer on the client console.');
+  status(uiText('Power signal sent. Continue the transfer on the client console.'));
 });
 
 for (const name of ['output', 'metadata', 'assets']) {
@@ -1016,7 +1052,7 @@ window.saveTransfer.onEvent((event) => {
     hidePairingModal();
     activeTransfer = null;
     busy(false);
-    controls.pairingState.textContent = 'Paired!';
+    controls.pairingState.textContent = uiText('Paired!');
     controls.pairingState.classList.add('paired');
     status(event.message);
   }
@@ -1076,7 +1112,7 @@ window.saveTransfer.onEvent((event) => {
       pendingUploadOptions.metadata = controls.metadata.value;
       showUploadConfirmation();
     } else {
-      status('Save list ready. Select saves to download, or select downloaded saves to upload.');
+      status(uiText('Save list ready. Select saves to download, or select downloaded saves to upload.'));
     }
     busy(false);
     return;
@@ -1106,7 +1142,7 @@ window.saveTransfer.onEvent((event) => {
     browseSessionActive = false;
     browseSessionVersion++;
     dataTransferArmedHost = null;
-    status(`Stopped: ${event.message}\nCheck the log and the current step, then retry.`);
+    status(uiText`Stopped: ${event.message}\nCheck the log and the current step, then retry.`);
     appendLog(`[error] ${event.message}`);
     busy(false);
     controls.powerBtn.hidden = true;
@@ -1127,12 +1163,12 @@ async function addExternalUpload(folder = false) {
     controls.uploadSaveSelect.appendChild(option);
   }
   for (const item of controls.uploadSaveSelect.options) item.selected = false;
-  option.textContent = `External: ${image.split(/[\\/]/).pop()}`;
+  option.textContent = uiText`External: ${image.split(/[\\/]/).pop()}`;
   option.selected = true;
   const title = image.toUpperCase().match(/PPSA[0-9]{5}/);
   controls.externalTitleId.value = title ? title[0] : '';
   renderCmpUpload();
-  status('External save added. Check the PPSA title ID and destination user, then click Upload.');
+  status(uiText('External save added. Check the PPSA title ID and destination user, then click Upload.'));
 }
 controls.addExternalSaveBtn.addEventListener('click', () => addExternalUpload(false));
 controls.addExternalFolderBtn.addEventListener('click', () => addExternalUpload(true));
@@ -1148,30 +1184,30 @@ async function addExternalZip() {
     controls.uploadSaveSelect.appendChild(option);
   }
   for (const item of controls.uploadSaveSelect.options) item.selected = false;
-  option.textContent = `External: ${result.folder.split(/[\\/]/).pop()}`;
+  option.textContent = uiText`External: ${result.folder.split(/[\\/]/).pop()}`;
   option.selected = true;
   controls.externalTitleId.value = result.titleId || '';
   renderCmpUpload();
   status(result.titleId
-    ? `ZIP extracted and added (title ${result.titleId}). Check the destination user, then click Upload.`
-    : 'ZIP extracted and added. Enter the PPSA title ID and destination user, then click Upload.');
+    ? uiText`ZIP extracted and added (title ${result.titleId}). Check the destination user, then click Upload.`
+    : uiText('ZIP extracted and added. Enter the PPSA title ID and destination user, then click Upload.'));
 }
 controls.addExternalZipBtn.addEventListener('click', () => addExternalZip());
 
 async function exportSelectedZip() {
   const selected = [...controls.uploadSaveSelect.selectedOptions].filter((option) => option.value !== 'external');
   if (selected.length !== 1) {
-    status('Select exactly one downloaded save above, then click Export as ZIP.');
+    status(uiText('Select exactly one downloaded save above, then click Export as ZIP.'));
     return;
   }
   const entryId = Number(selected[0].value);
   const suggestedName = `${controls.externalTitleId.value.trim() || `save-entry-${entryId}`}.zip`;
   try {
     const result = await window.saveTransfer.exportEntryZip(options().output, entryId, suggestedName);
-    if (!result) { status('Export canceled.'); return; }
-    status(`Saved ${result.file_count} file(s) (${result.title_id}) to ${result.archive}`);
+    if (!result) { status(uiText('Export canceled.')); return; }
+    status(uiText`Saved ${result.file_count} file(s) (${result.title_id}) to ${result.archive}`);
   } catch (error) {
-    status(`Could not export ZIP: ${error.message}`);
+    status(uiText`Could not export ZIP: ${error.message}`);
   }
 }
 controls.exportZipBtn.addEventListener('click', () => exportSelectedZip());
