@@ -391,6 +391,13 @@
         </div>
 
         <div class="card">
+          <label>Language
+            <select id="uiLanguage"><option value="auto">Automatic (system language)</option></select>
+          </label>
+          <p class="card-hint">Saving a different language reloads this window when it is safe to do so.</p>
+        </div>
+
+        <div class="card">
           <h3>Transfer paths</h3>
           <div class="settings-grid">
             <label>Console profile root folder
@@ -525,6 +532,8 @@
       <button id="cancelImportBtn" type="button">Cancel</button>
     </div>
   </dialog>
+  <script src="i18n.js"></script>
+  <script src="locales/zh-CN.js"></script>
   <script src="folder_paths.js"></script>
   <script src="cmp_skin.js"></script>
   <script src="tree_bridge.js"></script>

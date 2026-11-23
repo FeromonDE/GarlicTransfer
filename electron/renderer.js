@@ -1,9 +1,12 @@
 const folderPaths = window.transferFolders;
 const consoleInfo = window.ConsoleInfo;
+const { t: uiText } = window.GarlicI18n;
+window.GarlicI18n.setLanguage(new URLSearchParams(location.search).get('language'));
+window.GarlicI18n.localizeDocument(document);
 const byId = (id) => document.getElementById(id);
 const controls = {};
 for (const id of [
-  'uiLayout', 'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
+  'uiLayout', 'uiLanguage', 'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
@@ -234,7 +237,7 @@ function updateConsoleLocatorBusy() {
 // Function Locator Status
 function consoleLocatorStatus(message) {
   if (byId('consoleLocatorStatus')) byId('consoleLocatorStatus').textContent = message;
-  status(message);
+  status(uiText(message));
 }
 
 // Function Console Direction
@@ -411,12 +414,12 @@ async function refreshPairingStatus() {
   controls.pairingState.classList.remove('paired');
   controls.pairBtn.disabled = accountClosing || !supported || Boolean(activeTransfer) || browseSessionActive || targetIdentityChanged;
   if (targetIdentityChanged) {
-    controls.pairingState.textContent = 'Choose the OFW console again to confirm its identity.';
+    controls.pairingState.textContent = uiText('Choose the OFW console again to confirm its identity.');
     return;
   }
   controls.pairingState.textContent = supported
-    ? 'Checking whether this PS5 has been paired…'
-    : 'Discover a PS5 to check pairing.';
+    ? uiText('Checking whether this PS5 has been paired…')
+    : uiText('Discover a PS5 to check pairing.');
   if (!supported) return;
   const row = selectedLocatorConsole();
   if (row) { showPairingState(row.pairing); return; }
@@ -426,7 +429,7 @@ async function refreshPairingStatus() {
     showPairingState(paired ? 'paired' : 'unpaired');
   } catch (error) {
     if (version === selectedPairingVersion && !targetIdentityChanged && controls.consoleSelect.selectedOptions[0] === selected) {
-      controls.pairingState.textContent = `Could not check pairing: ${error.message}`;
+      controls.pairingState.textContent = uiText`Could not check pairing: ${error.message}`;
     }
   }
 }
@@ -434,11 +437,11 @@ async function refreshPairingStatus() {
 // Function Pairing State
 function showPairingState(state) {
   controls.pairingState.classList.toggle('paired', state === 'paired');
-  controls.pairingState.textContent = state === 'paired' ? 'Paired!'
-    : state === 'previous' ? 'Paired on another firmware. Pair this PS5 again.'
-    : state === 'unpaired' ? 'Not paired yet. Pair this PS5 to continue.'
-    : state === 'checking' ? 'Checking whether this PS5 has been paired…'
-    : 'Pairing status unavailable. You can pair this PS5 to continue.';
+  controls.pairingState.textContent = state === 'paired' ? uiText('Paired!')
+    : state === 'previous' ? uiText('Paired on another firmware. Pair this PS5 again.')
+    : state === 'unpaired' ? uiText('Not paired yet. Pair this PS5 to continue.')
+    : state === 'checking' ? uiText('Checking whether this PS5 has been paired…')
+    : uiText('Pairing status unavailable. You can pair this PS5 to continue.');
 }
 
 function saveEntriesMatchingSearch() {
@@ -1026,6 +1029,7 @@ function showPage(name) {
 for (const btn of document.querySelectorAll('.nav-item')) {
   btn.addEventListener('click', () => showPage(btn.dataset.page));
 }
+if (new URLSearchParams(location.search).get('page') === 'settings') showPage('settings');
 
 byId('logToggle').addEventListener('click', () => {
   byId('logDock').classList.toggle('expanded');
@@ -1086,6 +1090,12 @@ controls.manualConnectBtn.addEventListener('click', async () => {
   }
 });
 
+function canReloadLanguage() {
+  return !accountClosing && !activeTransfer && !browseSessionActive && !finishConfirmationPending
+    && !discoveryPending && !manualConnectionPending && !firewallPending && !decryptedWorkspace
+    && !document.querySelector('dialog[open]');
+}
+
 controls.settingsSave.addEventListener('click', async () => {
   if (accountClosing) return;
   const request = ++settingsSaveVersion;
@@ -1098,20 +1108,34 @@ controls.settingsSave.addEventListener('click', async () => {
     return;
   }
   current.jbFirmwareLimit = limit;
-  controls.settingsStatus.textContent = 'Saving settings…';
+  let languageChanged = false;
   try {
-    await window.saveTransfer.saveSettings({ ...current, output: profileRoot || current.output });
+    controls.settingsStatus.textContent = 'Saving settings…';
+    languageChanged = await window.saveTransfer.saveSettings({
+      ...current, output: profileRoot || current.output, uiLanguage: controls.uiLanguage.value,
+    });
     if (request !== settingsSaveVersion || accountClosing) return;
     const latest = controls.jbFirmwareLimit?.value ?? consoleInfo.DEFAULT_JB_FIRMWARE;
     if (controls.jbFirmwareLimit && editVersion === firmwareLimitEditVersion && latest === entered) {
       controls.jbFirmwareLimit.value = limit;
     }
-    controls.settingsStatus.textContent = consoleInfo.normalizeFirmwareLimit(latest) === limit
-      ? 'Settings saved to config.ini.'
-      : 'Settings saved. Newer firmware-limit edits are not saved yet.';
+    if (!languageChanged) {
+      controls.settingsStatus.textContent = consoleInfo.normalizeFirmwareLimit(latest) === limit
+        ? uiText('Settings saved to config.ini.')
+        : uiText('Settings saved. Newer firmware-limit edits are not saved yet.');
+      return;
+    }
+    const deferred = uiText('Language saved. Finish the current work and save settings again to apply it.');
+    if (canReloadLanguage()) {
+      await savedAccounts?.prepareClose();
+      if (canReloadLanguage() && await window.saveTransfer.reloadLanguage()) return;
+    }
+    controls.settingsStatus.textContent = deferred;
   } catch (error) {
     if (request === settingsSaveVersion && !accountClosing) {
-      controls.settingsStatus.textContent = `Could not save settings: ${error.message}`;
+      controls.settingsStatus.textContent = languageChanged
+        ? uiText`Language saved, but could not reload: ${error.message}`
+        : uiText`Could not save settings: ${error.message}`;
     }
   }
 });
