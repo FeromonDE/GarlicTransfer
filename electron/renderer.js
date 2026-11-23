@@ -7,7 +7,7 @@ for (const id of [
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log', 'saveSearch',
-  'consoleSelect', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
+  'consoleSelect', 'consoleLocatorRows', 'jbFirmwareLimit', 'transferConsoleHost', 'transferConsoleLabel', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
   'browseLocalBtn', 'localBrowser', 'localEntries', 'importModal', 'importWarning', 'confirmImportBtn', 'cancelImportBtn',
 ]) controls[id] = byId(id);
@@ -16,6 +16,13 @@ let accountClosing = false;
 let discoveryPending = false;
 let manualConnectionPending = false;
 let firewallPending = false;
+let consoleScanVersion = 0;
+let locatorPairingVersion = 0;
+let locatedConsoles = [];
+let selectedJbConsole = null;
+let targetIdentityChanged = false;
+let consoleLocator = null;
+let currentPage = 'console';
 let pendingImport = null;
 let externalUploadImage = null;
 let availableUsers = [];
@@ -78,6 +85,8 @@ function updateCmpConnection() {
   byId('cmpWorker').checked = controls.useRemoteOracle.checked;
   byId('cmpOracleHost').disabled = accountClosing || controls.useRemoteOracle.checked || Boolean(activeTransfer);
   byId('cmpWorker').disabled = accountClosing;
+  if (controls.transferConsoleHost) controls.transferConsoleHost.value = selected?.value || '';
+  renderConsoleLocator();
 }
 
 // Function Skin Layout.
@@ -88,7 +97,8 @@ const skinAppearance = window.SkinAppearance.create(document, window.saveTransfe
   document.dispatchEvent(new Event('cmp-layout-changed'));
   refreshCmpFiles();
 });
-byId('cmpOracleHost').addEventListener('input', () => { controls.oracleHost.value = byId('cmpOracleHost').value; });
+byId('cmpOracleHost').addEventListener('input', () => { selectedJbConsole = null; controls.oracleHost.value = byId('cmpOracleHost').value; renderConsoleLocator(); });
+controls.oracleHost.addEventListener('input', () => { selectedJbConsole = null; byId('cmpOracleHost').value = controls.oracleHost.value; renderConsoleLocator(); });
 byId('cmpWorker').addEventListener('change', () => { controls.useRemoteOracle.checked = byId('cmpWorker').checked; updateOracleMode(); });
 byId('cmpConnectionSettings').addEventListener('click', () => showPage('settings'));
 byId('cmpViewLog').addEventListener('click', () => byId('logDock').classList.toggle('expanded'));
@@ -113,7 +123,7 @@ async function confirmAction(message) {
 }
 
 function options() {
-  const clientHost = controls.consoleSelect.value;
+  const clientHost = targetIdentityChanged ? '' : controls.consoleSelect.value;
   return {
     oracleHost: controls.oracleHost.value.trim(),
     oraclePort: 9022,
@@ -121,9 +131,9 @@ function options() {
     serverUrl: controls.serverUrl.value.trim(),
     workerKey: controls.workerKey.value.trim(),
     clientHost,
-    hostId: controls.consoleSelect.selectedOptions[0]?.dataset.hostId || '',
+    hostId: targetIdentityChanged ? '' : controls.consoleSelect.selectedOptions[0]?.dataset.hostId || '',
     uiLayout: controls.uiLayout.value,
-    systemVersion: controls.consoleSelect.selectedOptions[0]?.dataset.firmware || '',
+    systemVersion: targetIdentityChanged ? '' : controls.consoleSelect.selectedOptions[0]?.dataset.firmware || '',
     interface: controls.interface.value.trim(),
     hardware: Number(controls.hardware.value || 0),
     output: controls.output.value.trim() || 'dt_downloads',
@@ -137,15 +147,158 @@ function options() {
     discoveryPort: Number(controls.discoveryPort.value || 1006),
     uploadDisplayName: controls.uploadDisplayName.value.trim() || 'GarlicTransfer',
     preferIpv6: controls.preferIpv6.checked,
+    jbFirmwareLimit: controls.jbFirmwareLimit ? controls.jbFirmwareLimit.value.trim() : '13.60',
     skipLaunch: dataTransferArmedHost === clientHost && !controls.preferIpv6.checked,
     skipPower: dataTransferArmedHost === clientHost && !controls.preferIpv6.checked,
   };
 }
 
 function formatFirmware(value) {
+  if (window.ConsoleLocator) return window.ConsoleLocator.formatFirmware(value);
   const text = String(value || 'unknown');
   return /^\d{8}$/.test(text) ? `${Number(text.slice(0, 2))}.${text.slice(2, 4)}` : text;
 }
+
+// Function Console Lock
+function consoleSelectionLocked() {
+  return accountClosing || Boolean(activeTransfer) || browseSessionActive;
+}
+
+// Function Console List
+function renderConsoleLocator() {
+  const limit = controls.jbFirmwareLimit?.value.trim() ?? '13.60';
+  if (selectedJbConsole && /^\d+\.\d{2}$/.test(limit) && window.ConsoleLocator?.normalizeFirmware(limit)
+    && controls.oracleHost.value.trim() === selectedJbConsole.host
+    && (String(selectedJbConsole.type || '').toUpperCase() !== 'PS5'
+      || !window.ConsoleLocator.firmwareEligible(selectedJbConsole.firmware, limit))) {
+    selectedJbConsole = null;
+    controls.oracleHost.value = ''; byId('cmpOracleHost').value = '';
+    consoleLocatorStatus('The selected JB helper no longer meets the maximum JB firmware. Choose another helper.');
+  }
+  const target = controls.consoleSelect.selectedOptions[0];
+  const discoveredTarget = locatedConsoles.find(console => console.host === target?.value);
+  const changedIdentity = discoveredTarget && (discoveredTarget.hostId || discoveredTarget.host) !== (target.dataset.hostId || target.value);
+  consoleLocator?.render(locatedConsoles, {
+    jbHost: controls.oracleHost.value.trim(), targetHost: changedIdentity ? '' : controls.consoleSelect.value,
+    firmwareLimit: /^\d+\.\d{2}$/.test(limit) ? limit : '',
+  });
+  consoleLocator?.setBusy(consoleSelectionLocked() || discoveryPending || manualConnectionPending);
+  controls.downloadBtn.disabled = accountClosing || Boolean(activeTransfer) || targetIdentityChanged;
+  controls.uploadBtn.disabled = accountClosing || Boolean(activeTransfer) || targetIdentityChanged;
+  controls.confirmUploadBtn.disabled = accountClosing || Boolean(activeTransfer) || targetIdentityChanged;
+}
+
+// Function Locator Status
+function consoleLocatorStatus(message) {
+  if (byId('consoleLocatorStatus')) byId('consoleLocatorStatus').textContent = message;
+  status(message);
+}
+
+// Function Console Direction
+function updateConsoleDirection() {
+  const label = currentPage === 'download' ? 'Source PS5' : currentPage === 'upload' ? 'Receiving PS5' : 'Source/Receiving PS5';
+  if (controls.transferConsoleLabel) controls.transferConsoleLabel.textContent = label;
+  if (byId('cmpTargetLabel')) byId('cmpTargetLabel').textContent = label;
+}
+
+// Function Console Option
+function makeConsoleOption(console) {
+  const option = document.createElement('option');
+  option.value = console.host;
+  option.dataset.hostId = console.hostId || '';
+  option.dataset.firmware = console.firmware || '';
+  option.textContent = `${console.name || 'PS5'} — ${console.host} (${formatFirmware(console.firmware)})`;
+  return option;
+}
+
+// Function Transfer Console
+function selectTransferConsole(console) {
+  if (consoleSelectionLocked()) return;
+  const host = window.ConsoleLocator?.canonicalIPv4(console.host);
+  if (!host || String(console.type || '').trim().toUpperCase() !== 'PS5') return;
+  console = { ...console, host };
+  const previous = controls.consoleSelect.selectedOptions[0];
+  const changed = previous?.value !== console.host || (previous?.dataset.hostId || '') !== (console.hostId || '');
+  let option = [...controls.consoleSelect.options].find(candidate => candidate.value === console.host);
+  if (!option) { option = makeConsoleOption(console); controls.consoleSelect.appendChild(option); }
+  else {
+    const replacement = makeConsoleOption(console);
+    option.dataset.hostId = replacement.dataset.hostId;
+    option.dataset.firmware = replacement.dataset.firmware;
+    option.textContent = replacement.textContent;
+  }
+  controls.consoleSelect.value = console.host;
+  targetIdentityChanged = false;
+  if (changed) { dataTransferArmedHost = null; resetUploadUI(); applyConsoleProfile(); }
+  else { refreshPairingStatus(); updateSidebarConsole(); updateCmpConnection(); }
+}
+
+// Function Console Discovery
+function showLocatedConsoles(consoles) {
+  const selected = controls.consoleSelect.selectedOptions[0]?.cloneNode(true);
+  const host = controls.consoleSelect.value;
+  locatedConsoles = consoles.map(console => ({ ...console, pairing: 'checking' }));
+  const foundJb = locatedConsoles.find(console => console.host === selectedJbConsole?.host);
+  if (foundJb) selectedJbConsole = foundJb;
+  const jbHost = controls.oracleHost.value.trim();
+  let identityChanged = false;
+  const placeholder = document.createElement('option');
+  placeholder.value = ''; placeholder.textContent = 'Select an OFW / transfer PS5';
+  controls.consoleSelect.replaceChildren(placeholder);
+  const seen = new Set();
+  for (const console of consoles) {
+    if (!console.host || seen.has(console.host)) continue;
+    seen.add(console.host);
+    if (console.host === host && selected
+      && (console.hostId || console.host) !== (selected.dataset.hostId || host)) {
+      controls.consoleSelect.appendChild(selected); identityChanged = true;
+    } else controls.consoleSelect.appendChild(makeConsoleOption(console));
+  }
+  if (host && !seen.has(host) && selected) controls.consoleSelect.appendChild(selected);
+  controls.consoleSelect.value = host;
+  targetIdentityChanged = identityChanged || (targetIdentityChanged && !seen.has(host));
+  refreshPairingStatus(); updateSidebarConsole(); updateCmpConnection();
+  void refreshLocatorPairing();
+  return [identityChanged ? 'The selected IP now reports a different console. Choose its OFW option to switch profiles.' : '',
+    jbHost && !controls.oracleHost.value.trim() ? 'The JB helper no longer meets the maximum firmware; choose another helper.' : '']
+    .filter(Boolean).join(' ');
+}
+
+// Function Locator Pairing
+async function refreshLocatorPairing() {
+  const version = ++locatorPairingVersion;
+  await Promise.all(locatedConsoles.map(async console => {
+    const identity = { hostId: console.hostId || '', systemVersion: console.firmware || '' };
+    let pairing = 'unknown';
+    if (identity.hostId && identity.systemVersion && window.saveTransfer.pairingAvailable) {
+      try {
+        if (typeof window.saveTransfer.pairingInfo === 'function') {
+          const result = await window.saveTransfer.pairingInfo(identity);
+          if (['paired', 'previous', 'unpaired', 'unknown'].includes(result?.status)) pairing = result.status;
+        } else pairing = await window.saveTransfer.pairingStatus(identity) ? 'paired' : 'unpaired';
+      } catch { /* A missing pairing status does not prevent console selection. */ }
+    }
+    if (version !== locatorPairingVersion || !locatedConsoles.includes(console)) return;
+    console.pairing = pairing;
+    renderConsoleLocator();
+  }));
+}
+
+// Function Console Roles
+consoleLocator = controls.consoleLocatorRows && window.ConsoleLocator?.create(document, controls.consoleLocatorRows, {
+  isBusy: consoleSelectionLocked,
+  onSelect: (role, console) => {
+    if (consoleSelectionLocked() || discoveryPending || manualConnectionPending) return;
+    if (role === 'jb') {
+      if (!window.ConsoleLocator.firmwareEligible(console.firmware, options().jbFirmwareLimit)) return;
+      selectedJbConsole = console;
+      controls.oracleHost.value = console.host;
+      byId('cmpOracleHost').value = console.host;
+      renderConsoleLocator();
+    } else if (role === 'ofw') selectTransferConsole(console);
+  },
+});
+controls.jbFirmwareLimit?.addEventListener('input', renderConsoleLocator);
 
 // Build profile path.
 function profilePath(root, child) {
@@ -186,7 +339,7 @@ async function refreshPairingStatus() {
   const identity = { hostId: selected?.dataset.hostId || '', systemVersion: selected?.dataset.firmware || '' };
   const supported = window.saveTransfer.pairingAvailable && Boolean(selected?.value);
   controls.pairingState.classList.remove('paired');
-  controls.pairBtn.disabled = accountClosing || !supported || Boolean(activeTransfer) || browseSessionActive;
+  controls.pairBtn.disabled = accountClosing || !supported || Boolean(activeTransfer) || browseSessionActive || targetIdentityChanged;
   controls.pairingState.textContent = supported
     ? 'Checking whether this PS5 has been paired…'
     : 'Discover a PS5 to check pairing.';
@@ -233,10 +386,11 @@ function setAccountClosing(value) {
 
 function busy(value, { keepDialogs = false } = {}) {
   const disabled = Boolean(value) || accountClosing;
+  if (disabled) consoleScanVersion++;
   cmpLayout.setBusy(disabled);
   updateCmpConnection();
-  controls.downloadBtn.disabled = disabled;
-  controls.uploadBtn.disabled = disabled;
+  controls.downloadBtn.disabled = disabled || targetIdentityChanged;
+  controls.uploadBtn.disabled = disabled || targetIdentityChanged;
   controls.addExternalSaveBtn.disabled = disabled;
   controls.addExternalFolderBtn.disabled = disabled;
   controls.addExternalZipBtn.disabled = disabled;
@@ -244,16 +398,17 @@ function busy(value, { keepDialogs = false } = {}) {
   controls.externalTitleId.disabled = disabled;
   controls.browseLocalBtn.disabled = disabled;
   controls.confirmImportBtn.disabled = disabled;
-  controls.confirmUploadBtn.disabled = disabled;
+  controls.confirmUploadBtn.disabled = disabled || targetIdentityChanged;
   controls.userSelect.disabled = disabled;
   controls.uploadSaveSelect.disabled = disabled;
   controls.powerBtn.disabled = accountClosing;
   for (const button of document.querySelectorAll('.local-action')) button.disabled = disabled;
-  controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || !controls.consoleSelect.value || disabled || browseSessionActive;
+  controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || !controls.consoleSelect.value || disabled || browseSessionActive || targetIdentityChanged;
   controls.cancelBtn.disabled = !value;
   controls.consoleSelect.disabled = disabled || browseSessionActive;
   controls.discoverBtn.disabled = disabled || browseSessionActive || discoveryPending;
   controls.manualConnectBtn.disabled = disabled || browseSessionActive || manualConnectionPending;
+  if (controls.jbFirmwareLimit) controls.jbFirmwareLimit.disabled = disabled || browseSessionActive;
   controls.settingsSave.disabled = accountClosing;
   controls.firewallHelperBtn.disabled = accountClosing || firewallPending;
   for (const button of document.querySelectorAll('[data-action="output"], [data-action="metadata"], [data-action="assets"]')) button.disabled = accountClosing;
@@ -597,6 +752,7 @@ async function startDownload(entryIds) {
 
 async function startUploadSource() {
   if (accountClosing) return;
+  if (targetIdentityChanged) { status('Choose the OFW console again before starting a transfer.'); return; }
   const selectedUser = controls.userSelect.selectedOptions[0];
   const externalSelected = [...controls.uploadSaveSelect.selectedOptions].some((option) => option.value === 'external');
   const entryIds = [...controls.uploadSaveSelect.selectedOptions].filter((option) => option.value !== 'external').map((option) => Number(option.value));
@@ -772,6 +928,8 @@ controls.useRemoteOracle.addEventListener('change', updateOracleMode);
 updateOracleMode();
 
 function showPage(name) {
+  currentPage = name;
+  updateConsoleDirection();
   cmpLayout.setPage(name);
   for (const el of document.querySelectorAll('.page')) el.hidden = true;
   const target = byId(`${name}Page`);
@@ -789,81 +947,74 @@ byId('logToggle').addEventListener('click', () => {
 });
 
 controls.discoverBtn.addEventListener('click', async () => {
-  if (accountClosing || discoveryPending) return;
+  if (consoleSelectionLocked() || discoveryPending) return;
+  const request = ++consoleScanVersion;
   discoveryPending = true;
   controls.discoverBtn.disabled = true;
-  status('Discovering consoles with SRCH…');
+  renderConsoleLocator();
+  consoleLocatorStatus('Discovering consoles with SRCH…');
   try {
     const consoles = await window.saveTransfer.discover(options());
-    if (accountClosing) return;
-    controls.consoleSelect.replaceChildren();
-    for (const console of consoles) {
-      const option = document.createElement('option');
-      option.value = console.host;
-      option.dataset.hostId = console.hostId;
-      option.dataset.firmware = console.firmware;
-      option.textContent = `${console.name} — ${console.host} (${formatFirmware(console.firmware)})`;
-      controls.consoleSelect.appendChild(option);
-    }
-    if (!consoles.length) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'No consoles found';
-      controls.consoleSelect.appendChild(option);
-    }
-    applyConsoleProfile();
-    status(consoles.length
-      ? `Found ${consoles.length} console(s). Each console uses its own metadata profile.`
-      : 'No consoles found. Check the network and firewall.');
+    if (request !== consoleScanVersion || consoleSelectionLocked()) return;
+    const notice = showLocatedConsoles(consoles);
+    consoleLocatorStatus((consoles.length
+      ? `Found ${consoles.length} console(s). Choose JB for a helper or OFW for transfers.`
+      : 'No consoles found. Check the network and firewall.') + (notice ? ` ${notice}` : ''));
   } catch (error) {
-    status(`Discovery failed: ${error.message}`);
+    if (request === consoleScanVersion && !consoleSelectionLocked()) consoleLocatorStatus(`Discovery failed: ${error.message}`);
   } finally {
     discoveryPending = false;
     controls.discoverBtn.disabled = accountClosing || Boolean(activeTransfer) || browseSessionActive;
+    renderConsoleLocator();
   }
 });
 
 controls.manualConnectBtn.addEventListener('click', async () => {
-  if (accountClosing || manualConnectionPending) return;
-  const host = controls.manualHost.value.trim();
-  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) {
-    status('Enter a valid PS5 IPv4 address.');
+  if (consoleSelectionLocked() || manualConnectionPending) return;
+  const host = window.ConsoleLocator?.canonicalIPv4(controls.manualHost.value.trim());
+  if (!host) {
+    consoleLocatorStatus('Enter a valid PS5 IPv4 address.');
     return;
   }
+  const request = ++consoleScanVersion;
   manualConnectionPending = true;
   controls.manualConnectBtn.disabled = true;
-  status(`Contacting PS5 at ${host}…`);
+  renderConsoleLocator();
+  consoleLocatorStatus(`Contacting PS5 at ${host}…`);
   try {
     const consoles = await window.saveTransfer.discover({ ...options(), targetHost: host });
-    if (accountClosing) return;
-    if (!consoles.length) {
-      status(`No PS5 responded at ${host}. Check the address and network.`);
+    if (request !== consoleScanVersion || consoleSelectionLocked()) return;
+    const selected = consoles.find(console => console.host === host && String(console.type || '').trim().toUpperCase() === 'PS5');
+    if (!selected) {
+      consoleLocatorStatus(`No PS5 responded at ${host}. Check the address and network.`);
       return;
     }
-    controls.consoleSelect.replaceChildren();
-    for (const console of consoles) {
-      const option = document.createElement('option');
-      option.value = console.host;
-      option.dataset.hostId = console.hostId;
-      option.dataset.firmware = console.firmware;
-      option.textContent = `${console.name} — ${console.host} (${formatFirmware(console.firmware)})`;
-      controls.consoleSelect.appendChild(option);
-    }
-    applyConsoleProfile();
-    status(`Using ${consoles[0].name} at ${host} (${formatFirmware(consoles[0].firmware)}).`);
+    showLocatedConsoles(consoles);
+    selectTransferConsole(selected);
+    consoleLocatorStatus(`Using ${selected.name || 'PS5'} at ${host} (${formatFirmware(selected.firmware)}).`);
   } catch (error) {
-    status(`Could not use ${host}: ${error.message}`);
+    if (request === consoleScanVersion && !consoleSelectionLocked()) consoleLocatorStatus(`Could not use ${host}: ${error.message}`);
   } finally {
     manualConnectionPending = false;
     controls.manualConnectBtn.disabled = accountClosing || Boolean(activeTransfer) || browseSessionActive;
+    renderConsoleLocator();
   }
 });
 
 controls.settingsSave.addEventListener('click', async () => {
   if (accountClosing) return;
   const current = options();
-  await window.saveTransfer.saveSettings({ ...current, output: profileRoot || current.output });
-  controls.settingsStatus.textContent = 'Settings saved to config.ini.';
+  const limit = controls.jbFirmwareLimit?.value.trim() ?? '13.60';
+  if (!/^\d+\.\d{2}$/.test(limit) || !window.ConsoleLocator?.normalizeFirmware(limit)) {
+    controls.settingsStatus.textContent = 'Enter the maximum JB firmware as major.two digits, for example 13.60.';
+    return;
+  }
+  current.jbFirmwareLimit = window.ConsoleLocator.formatFirmware(limit);
+  try {
+    await window.saveTransfer.saveSettings({ ...current, output: profileRoot || current.output });
+    if (controls.jbFirmwareLimit) controls.jbFirmwareLimit.value = current.jbFirmwareLimit;
+    controls.settingsStatus.textContent = 'Settings saved to config.ini.';
+  } catch (error) { controls.settingsStatus.textContent = `Could not save settings: ${error.message}`; }
 });
 
 controls.firewallSettings.hidden = !window.saveTransfer.firewallAvailable;
@@ -895,6 +1046,7 @@ async function loadSettings() {
   applyConsoleProfile();
   await skinAppearance.reload(settings.uiLayout);
   updateOracleMode();
+  renderConsoleLocator(); updateConsoleDirection();
   window.saveTransfer.version().then((version) => {
     controls.appVersion.textContent = `v${version}`;
   });
@@ -1018,6 +1170,7 @@ window.saveTransfer.onEvent((event) => {
     busy(false);
     controls.pairingState.textContent = 'Paired!';
     controls.pairingState.classList.add('paired');
+    void refreshLocatorPairing();
     status(event.message);
   }
   if (event.type === 'powerRequired') showPowerModal();

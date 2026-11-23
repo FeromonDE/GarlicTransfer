@@ -9,7 +9,7 @@ const path = require('node:path');
 const { startRemoteOracle, stopRemoteOracle } = require('./remote_oracle.cjs');
 const { loadSettings, saveSettings } = require('./config.cjs');
 const { titleName } = require('./titles.cjs');
-const { pairingPrefixPath, existingPairingPrefix } = require('./pairing_store.cjs');
+const { pairingPrefixPath, existingPairingPrefix, pairingInfo } = require('./pairing_store.cjs');
 const { registerSaveEditor } = require('./save_editor.cjs');
 const { LocalPcStore } = require('./local_pc.cjs');
 const { AccountStore } = require('./account_store.cjs');
@@ -618,6 +618,7 @@ ipcMain.handle('transfer:pair-status', (_event, identity) => {
   if (!identity?.hostId || !identity?.systemVersion) return false;
   return Boolean(existingPairingPrefix(app.getPath('userData'), identity));
 });
+ipcMain.handle('transfer:pair-info', (_event, identity) => pairingInfo(app.getPath('userData'), identity));
 ipcMain.handle('transfer:select', (_event, entryIds) => {
   if (!active || active.kind !== 'download' || !active.awaitingSelection || !active.process) {
     throw new Error('no download session is waiting for a selection');

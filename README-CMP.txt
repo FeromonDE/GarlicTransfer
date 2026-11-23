@@ -1,15 +1,38 @@
-GarlicTransfer - Saved Accounts Test5
-App version: 0.3.3
-Source: supplied GarlicTransfer.zip, with previous Local PC and worker changes.
+GarlicTransfer - Console Finder, Editor Tree and Replace File
+Source: GitHub main f36b80541c13d280ba08c38b2ea85fa1410e7618
+The upstream app version values are preserved.
 
 INSTALL
-Close GarlicTransfer. From the Saved Accounts Test5 update ZIP, copy
-resources/app.asar into your current installation's resources folder,
-replacing app.asar. Run GarlicTransfer.exe normally.
-The existing Python, PS5 helper, settings and saved-account list are reused.
-The full Windows portable build can still be extracted into a new folder;
-Python is bundled, so no separate Python installation is needed.
-This test includes all previous Local PC, worker and cleanup changes.
+Close GarlicTransfer. Copy resources/app.asar from this update ZIP into the
+resources folder of the matching latest-main installation, replacing app.asar.
+Run GarlicTransfer normally. Python and PS5 helpers are unchanged.
+
+FIND PLAYSTATIONS
+Locate PS5 lists each discovered console's name, type, IPv4, firmware,
+Console ID and saved pairing status.
+Choose JB for the local helper. This fills both JB helper PS5 IPv4 and Local
+oracle IP; it does not change Use GarlicWorker or the transfer console.
+Choose OFW for the transfer console: Source PS5 for PS5 to PC, Receiving PS5
+for PC to PS5. Scanning alone does not assign a console or start a transfer.
+Settings / Oracle / Maximum JB firmware defaults to 13.60. PS5s at or below
+the limit can be selected as JB; higher or unknown firmware cannot. Set a
+new limit, such as 14.22, and Save Settings when a newer firmware is supported.
+Manual IPv4 discovery uses the same list. Existing selections are kept during
+rescans, and console roles are locked while a transfer or save job is active.
+Pairing shows Paired for this firmware, Pair again for pairing saved on another
+firmware, Not paired when none is saved, or Unknown if it cannot be checked.
+Pairing retains the 32-byte approval value from the console's Data Transfer
+request, keyed by Console ID and firmware. Connections use the current IPv4;
+the saved pairing is selected by identity rather than by its address.
+
+EDITOR FILE TREE
+Edit your save now groups decrypted files into expandable folders.
+Right-click a file and choose Replace file to select a replacement on your PC.
+The selected workspace file keeps its original name and folder location.
+Cancel leaves it unchanged. Replacing the file currently open in the editor
+asks before discarding unsaved text; edits to another open file are retained.
+Replacement also supports files larger than the text/hex editor limit.
+Use Save & encrypt or Export files to keep the updated save.
 
 LOCAL PC SAVES
 In Local files / My Saves, choose Local PC in the Console selector.
@@ -185,7 +208,7 @@ Windows appearance and native input still need testing on your machine.
 No live PS5 test performed.
 
 CONTENTS
-The Saved Accounts update ZIP contains resources/app.asar; helper files are unchanged.
+The editor update ZIP contains resources/app.asar; helper files are unchanged.
 The source ZIP opens directly at the project root, with source and tests.
 skin-template/my-onion/: editable external add-in example.
 poc/local_worker/: matching helper source and GPL license.
