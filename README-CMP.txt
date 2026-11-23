@@ -3,9 +3,16 @@ Source: GitHub main f36b80541c13d280ba08c38b2ea85fa1410e7618
 The upstream app version values are preserved.
 
 INSTALL
-Close GarlicTransfer. Copy resources/app.asar from this update ZIP into the
-resources folder of the matching latest-main installation, replacing app.asar.
-Run GarlicTransfer normally. Python and PS5 helpers are unchanged.
+Close GarlicTransfer. Merge the update ZIP's resources folder into the resources
+folder of the matching installation, replacing app.asar and poc/dt_resign.py.
+Run GarlicTransfer normally. The PS5 helper binaries are unchanged.
+
+WINDOWS RESIGN DATABASE FIX
+Resign metadata reads close their SQLite connections before returning or
+retrying with a local copy. The resign tests also close their fixture and result
+connections before temporary-folder cleanup. This fixes Windows metadata.db
+file locks without suppressing cleanup errors. The resign files match the
+reported CI commit 23c7d02746d1cf58959fea1411d8d49d215e6674 before this fix.
 
 FIND PLAYSTATIONS
 Locate PS5 lists each discovered console's name, type, IPv4, firmware,
@@ -214,8 +221,10 @@ INCLUDED TREE CLEANUP
 - All previous changes and external skin formats are included.
 
 VALIDATION
-404 Node 22 tests and 105 Python tests passed (509 total).
-All 140 account, close, confirmation and tree checks passed under Node 18.
+121 Python tests passed locally after the resign database fix. Connection
+checks cover normal reads, failed reads and both local-copy fallback outcomes.
+The preceding editor/console-finder build passed all 528 Node tests; its
+Electron files are unchanged by this fix. Windows CI still needs to be rerun.
 The packaged Electron files match the tested source.
 Name entry, automatic saving, Enter, Cancel/Escape, failed-save retry, focus,
 caret retention and current-name tooltips are covered by DOM event tests.
@@ -223,7 +232,9 @@ Windows appearance and native input still need testing on your machine.
 No live PS5 test performed.
 
 CONTENTS
-The editor update ZIP contains resources/app.asar; helper files are unchanged.
+The update ZIP contains resources/app.asar and resources/poc/dt_resign.py.
+The app.asar retains the previously tested editor and console-finder changes;
+the Windows resign runtime fix is in poc/dt_resign.py.
 The source ZIP opens directly at the project root, with source and tests.
 skin-template/my-onion/: editable external add-in example.
 poc/local_worker/: matching helper source and GPL license.
