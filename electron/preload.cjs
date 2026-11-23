@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('saveTransfer', {
   pair: (options) => ipcRenderer.invoke('transfer:pair', options),
   pairingStatus: (identity) => ipcRenderer.invoke('transfer:pair-status', identity),
   pairingInfo: (identity) => ipcRenderer.invoke('transfer:pair-info', identity),
+  pairingInfos: (identities) => ipcRenderer.invoke('transfer:pair-infos', identities),
   download: (options) => ipcRenderer.invoke('transfer:download', options),
   select: (entryIds) => ipcRenderer.invoke('transfer:select', entryIds),
   finish: () => ipcRenderer.invoke('transfer:finish'),

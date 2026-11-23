@@ -1,55 +1,31 @@
 (function expose(root, build) {
-  const api = build();
+  const api = build(root.ConsoleInfo || (typeof require === 'function' ? require('./console_info.js') : null));
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.ConsoleLocator = api;
-})(typeof window === 'object' ? window : globalThis, function build() {
-  // Function Firmware Parsing
-  function normalizeFirmware(value) {
-    let major, minor;
-    if (Array.isArray(value) && value.length === 2) [major, minor] = value;
-    else {
-      const text = typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
-        ? String(value).padStart(8, '0') : typeof value === 'string' ? value.trim() : '';
-      const dotted = /^(\d+)\.(\d{2})$/.exec(text);
-      if (dotted) { major = Number(dotted[1]); minor = Number(dotted[2]); }
-      else if (/^\d{8}$/.test(text)) { major = Number(text.slice(0, 2)); minor = Number(text.slice(2, 4)); }
-      else return null;
-    }
-    return Number.isSafeInteger(major) && major > 0 && Number.isInteger(minor) && minor >= 0 && minor <= 99
-      ? [major, minor] : null;
-  }
-
-  // Function Firmware Label
-  function formatFirmware(value) {
-    const version = normalizeFirmware(value);
-    return version ? `${version[0]}.${String(version[1]).padStart(2, '0')}` : 'Unknown';
-  }
-
-  // Function Firmware Limit
-  function firmwareEligible(value, limit = '13.60') {
-    const version = normalizeFirmware(value), maximum = normalizeFirmware(limit);
-    return Boolean(version && maximum && (version[0] < maximum[0] || (version[0] === maximum[0] && version[1] <= maximum[1])));
-  }
-
-  // Function IPv4 Parsing
-  function canonicalIPv4(value) {
-    if (typeof value !== 'string') return '';
-    const text = value.trim();
-    if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(text)) return '';
-    const parts = text.split('.').map(Number);
-    return parts.every(part => part <= 255) ? parts.join('.') : '';
-  }
+})(typeof window === 'object' ? window : globalThis, function build(info) {
+  const { DEFAULT_JB_FIRMWARE, normalizeFirmware, formatFirmware, firmwareEligible, canonicalIPv4, normalizeFirmwareLimit, normalizeConsoles } = info;
 
   // Function Console Locator
   function create(document, tbody, { onSelect = () => {}, isBusy = () => false } = {}) {
     const rows = new Map();
-    let consoles = new Map(), busy = false, firmwareLimit = '13.60';
+    let consoles = new Map(), busy = false, firmwareLimit = DEFAULT_JB_FIRMWARE;
     let selected = { jb: '', ofw: '' };
     const blocked = () => busy || isBusy();
-    const ps5 = console => String(console.type || '').trim().toUpperCase() === 'PS5';
+    const ps5 = console => console.type === 'PS5';
     const allowed = (role, console) => ps5(console) && (role === 'ofw' || firmwareEligible(console.firmware, firmwareLimit));
     const ipNumber = host => host.split('.').reduce((number, octet) => number * 256 + Number(octet), 0);
     const pairingLabels = new Map([['checking', 'Checking…'], ['paired', 'Paired'], ['previous', 'Pair again'], ['unpaired', 'Not paired'], ['unknown', 'Unknown']]);
+
+    // Function Pairing Label
+    function paintPairing(item, value) {
+      const status = pairingLabels.has(value) ? value : 'unknown';
+      if (item.pairing.dataset.pairing !== status) {
+        item.pairing.className = `console-locator-pairing ${status}`;
+        item.pairing.dataset.pairing = status;
+        item.pairing.textContent = pairingLabels.get(status);
+      }
+      return status;
+    }
 
     // Function Console Selection
     function update() {
@@ -93,15 +69,8 @@
     function render(values = [], options = {}) {
       if (Object.hasOwn(options, 'jbHost')) selected.jb = canonicalIPv4(options.jbHost);
       if (Object.hasOwn(options, 'targetHost')) selected.ofw = canonicalIPv4(options.targetHost);
-      if (Object.hasOwn(options, 'firmwareLimit')) firmwareLimit = options.firmwareLimit;
-      const found = new Map();
-      for (const value of Array.isArray(values) ? values : []) {
-        const host = canonicalIPv4(value?.host);
-        if (!host || found.has(host)) continue;
-        const type = typeof value.type === 'string' ? value.type.trim() : '';
-        const name = typeof value.name === 'string' && value.name.trim() ? value.name.trim() : type || 'PlayStation';
-        found.set(host, { ...value, host, name, type });
-      }
+      if (Object.hasOwn(options, 'firmwareLimit')) firmwareLimit = normalizeFirmwareLimit(options.firmwareLimit);
+      const found = new Map(normalizeConsoles(values).map(console => [console.host, console]));
       const ordered = [...found.values()].sort((a, b) => ipNumber(a.host) - ipNumber(b.host)
         || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
       consoles = found;
@@ -113,14 +82,10 @@
         if (!item) { item = makeRow(console.host); rows.set(console.host, item); }
         item.name.textContent = console.name; item.name.title = console.type || 'Unknown console type';
         item.type.textContent = console.type || 'Unknown';
-        const hostId = typeof console.hostId === 'string' ? console.hostId.trim() : '';
-        item.id.textContent = hostId || 'Unknown'; item.id.title = hostId || 'Unknown';
+        item.id.textContent = console.hostId || 'Unknown'; item.id.title = console.hostId || 'Unknown';
         item.firmware.textContent = formatFirmware(console.firmware);
         item.firmware.title = typeof console.firmware === 'string' || typeof console.firmware === 'number' ? String(console.firmware) : '';
-        const pairingStatus = pairingLabels.has(console.pairing) ? console.pairing : 'unknown';
-        item.pairing.className = `console-locator-pairing ${pairingStatus}`;
-        item.pairing.dataset.pairing = pairingStatus;
-        item.pairing.textContent = pairingLabels.get(pairingStatus);
+        paintPairing(item, console.pairing);
         if (tbody.children[index] !== item.row) tbody.insertBefore(item.row, tbody.children[index] || null);
       }
       if (!ordered.length) {
@@ -143,9 +108,17 @@
     });
     return {
       render,
+      // Function Pairing Update
+      updatePairing(host, value) {
+        const address = canonicalIPv4(host), item = rows.get(address), console = consoles.get(address);
+        if (!item || !console) return false;
+        const pairing = paintPairing(item, value);
+        consoles.set(address, { ...console, pairing });
+        return true;
+      },
       setBusy(value) { busy = Boolean(value); update(); },
       reset() { render([], { jbHost: '', targetHost: '' }); },
     };
   }
-  return { normalizeFirmware, formatFirmware, firmwareEligible, canonicalIPv4, create };
+  return { ...info, create };
 });

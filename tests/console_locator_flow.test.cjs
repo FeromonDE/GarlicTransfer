@@ -376,3 +376,401 @@ test('per-console pairing details ignore stale results and refresh after pairing
   await until(() => document.querySelector('#consoleLocatorRows tr[data-host]').textContent.includes('Paired'), 'The paired status did not refresh');
   assert.deepEqual(f.errors, []);
 });
+
+test('a cold lowercase discovery preserves its profile and armed session through an uppercase rescan', async t => {
+  const f = await app(t);
+  const { document, window } = f;
+  f.setDiscover(async () => [{ ...consoles[0], type: ' ps5 ' }, { ...consoles[1], hostId: 'aabbccddeeff' }]);
+  await f.find(); radio(f, 'ofw', consoles[1].host).click(); radio(f, 'jb', consoles[0].host).click();
+  const selected = document.getElementById('consoleSelect').selectedOptions[0];
+  const output = document.getElementById('output').value;
+  assert.match(output, /aabbccddeeff$/);
+  assert.equal(selected.dataset.hostId, 'AABBCCDDEEFF');
+  assert.equal(selected.dataset.profileId, 'aabbccddeeff');
+  document.getElementById('downloadBtn').click();
+  await until(() => window.cmpFixture.calls.downloads.length === 1, 'The legacy profile did not open its session');
+  window.cmpFixture.emit({ type: 'done', message: 'Original browse finished' });
+  document.getElementById('metadata').value = '/profiles/aabbccddeeff/keep.db';
+  document.getElementById('assets').value = '/profiles/aabbccddeeff/custom-saves';
+  f.setDiscover(async () => [{ ...consoles[0], type: ' PS5 ' }, { ...consoles[1], hostId: ' AABBCCDDEEFF ' }]);
+  await f.find();
+  assert.equal(document.getElementById('oracleHost').value, consoles[0].host);
+  assert.equal(document.getElementById('cmpOracleHost').value, consoles[0].host);
+  assert.equal(radio(f, 'jb', consoles[0].host).checked, true);
+  assert.equal(radio(f, 'ofw', consoles[1].host).checked, true);
+  assert.equal(document.getElementById('output').value, output);
+  assert.equal(document.getElementById('metadata').value, '/profiles/aabbccddeeff/keep.db');
+  assert.equal(document.getElementById('assets').value, '/profiles/aabbccddeeff/custom-saves');
+  assert.equal(document.getElementById('consoleSelect').selectedOptions[0].dataset.hostId, 'AABBCCDDEEFF');
+  assert.equal(document.getElementById('consoleSelect').selectedOptions[0].dataset.profileId, 'aabbccddeeff');
+  assert.equal(document.getElementById('downloadBtn').disabled, false);
+  document.getElementById('downloadBtn').click();
+  await until(() => window.cmpFixture.calls.downloads.length === 2, 'The case-only rescan blocked the existing target');
+  assert.equal(window.cmpFixture.calls.downloads[1].skipLaunch, true);
+  assert.equal(window.cmpFixture.calls.downloads[1].skipPower, true);
+  assert.equal(window.cmpFixture.calls.downloads[1].output, output);
+  assert.equal(window.cmpFixture.calls.downloads[1].hostId, 'AABBCCDDEEFF');
+  assert.equal(window.cmpFixture.calls.downloads[1].profileId, 'aabbccddeeff');
+  assert.deepEqual(f.errors, []);
+});
+
+test('broadcast and manual discovery share canonical addresses and discard duplicate records', async t => {
+  const f = await app(t);
+  const { document } = f;
+  f.setDiscover(async () => [
+    { ...consoles[1], host: '192.168.000.043', hostId: ' target ', type: ' ps5 ' },
+    { ...consoles[1], hostId: 'DUPLICATE' },
+    { ...consoles[0], host: '192.168.0.999' },
+  ]);
+  await f.find();
+  assert.equal(document.querySelectorAll('#consoleLocatorRows tr[data-host]').length, 1);
+  assert.equal(document.getElementById('consoleSelect').options.length, 2);
+  assert.equal(radio(f, 'ofw', consoles[1].host).disabled, false);
+  document.getElementById('manualHost').value = '192.168.000.043';
+  document.getElementById('manualConnectBtn').click();
+  await until(() => !document.getElementById('manualConnectBtn').disabled && document.getElementById('consoleSelect').value,
+    'Manual discovery did not use the same canonical record');
+  assert.equal(document.getElementById('consoleSelect').value, consoles[1].host);
+  assert.equal(document.getElementById('consoleSelect').selectedOptions[0].dataset.hostId, 'TARGET');
+  assert.equal(document.getElementById('transferConsoleHost').value, consoles[1].host);
+  assert.deepEqual(f.errors, []);
+});
+
+test('pairing uses one ordered batch and changes only badges while preserving role focus', async t => {
+  const f = await app(t);
+  const { document, window } = f;
+  const batches = [], responses = [];
+  window.saveTransfer.pairingInfos = identities => {
+    batches.push(plain(identities));
+    return new Promise(resolve => { responses.push(resolve); });
+  };
+  let singles = 0;
+  window.saveTransfer.pairingInfo = async () => { singles++; return { status: 'unknown' }; };
+  await f.find();
+  assert.equal(batches.length, 1);
+  assert.deepEqual(batches[0], [
+    { hostId: 'HELPER', systemVersion: '13600000' },
+    { hostId: 'TARGET', systemVersion: '14220000' },
+    { hostId: 'OLDER', systemVersion: '12020000' },
+  ]);
+  const chosen = radio(f, 'ofw', consoles[1].host);
+  chosen.click(); chosen.focus();
+  const row = chosen.closest('tr'), mutations = [];
+  const observer = new window.MutationObserver(records => mutations.push(...records));
+  observer.observe(document.getElementById('consoleLocatorRows'), { subtree: true, childList: true, characterData: true, attributes: true });
+  responses[0]([{ status: 'paired' }, { status: 'previous' }, { status: 'unpaired' }]);
+  await until(() => row.querySelector('[data-pairing="previous"]')
+    && document.getElementById('pairingState').textContent.includes('another firmware'),
+  'The ordered batch result did not update the row and selected pairing panel');
+  mutations.push(...observer.takeRecords()); observer.disconnect();
+  assert.ok(mutations.length, 'The pairing response made no badge updates');
+  assert.ok(mutations.every(record => {
+    const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+    return Boolean(element?.closest('.console-locator-pairing'));
+  }), 'A pairing-only response mutated names, radios or row order');
+  assert.equal(radio(f, 'ofw', consoles[1].host), chosen);
+  assert.equal(chosen.closest('tr'), row);
+  assert.equal(chosen.checked, true);
+  assert.equal(document.activeElement, chosen);
+  assert.equal(singles, 0);
+  assert.equal(f.calls.pairing.length, 0, 'Selecting a known row must reuse its pairing result');
+  assert.deepEqual(f.errors, []);
+});
+
+test('stale pairing batches cannot restore a green selected identity after its IP changes consoles', async t => {
+  const f = await app(t);
+  const { document, window } = f;
+  const responses = [];
+  window.saveTransfer.pairingInfos = () => new Promise(resolve => { responses.push(resolve); });
+  f.setDiscover(async () => [consoles[1]]); await f.find();
+  radio(f, 'ofw', consoles[1].host).click();
+  assert.equal(document.getElementById('sidebarConsole').classList.contains('connected'), true);
+  f.setDiscover(async () => [{ ...consoles[1], hostId: 'NEW-TARGET' }]); await f.find();
+  assert.equal(responses.length, 2);
+  assert.equal(document.getElementById('sidebarConsole').classList.contains('connected'), false);
+  assert.match(document.getElementById('sidebarConsoleName').textContent, /Choose OFW/);
+  assert.equal(document.getElementById('pairingState').classList.contains('paired'), false);
+  assert.match(document.getElementById('pairingState').textContent, /Choose the OFW/);
+  responses[0]([{ status: 'paired' }]);
+  responses[1]([{ status: 'paired' }]);
+  await until(() => document.querySelector('#consoleLocatorRows [data-pairing="paired"]'), 'The new console badge did not receive its own result');
+  assert.equal(document.getElementById('sidebarConsole').classList.contains('connected'), false);
+  assert.equal(document.getElementById('pairingState').classList.contains('paired'), false);
+  assert.match(document.getElementById('pairingState').textContent, /Choose the OFW/);
+  radio(f, 'ofw', consoles[1].host).click();
+  assert.equal(document.getElementById('sidebarConsole').classList.contains('connected'), true);
+  assert.equal(document.getElementById('pairingState').classList.contains('paired'), true);
+  assert.equal(responses.length, 2, 'The explicitly selected row should reuse its checked pairing result');
+  assert.deepEqual(f.errors, []);
+});
+
+test('a late legacy pairing check cannot mark an unconfirmed replacement console as paired', async t => {
+  const f = await app(t);
+  const { document, window } = f;
+  let finish, checked = false;
+  window.saveTransfer.pairingStatus = () => new Promise(resolve => { finish = resolve; }).then(result => { checked = true; return result; });
+  const option = document.createElement('option');
+  option.value = consoles[1].host; option.dataset.hostId = 'TARGET'; option.dataset.firmware = '14220000';
+  option.textContent = 'Original target'; document.getElementById('consoleSelect').appendChild(option);
+  document.getElementById('consoleSelect').value = option.value;
+  document.getElementById('consoleSelect').dispatchEvent(new window.Event('change'));
+  await until(() => typeof finish === 'function', 'The legacy target did not request pairing status');
+  window.saveTransfer.pairingInfos = async () => [{ status: 'paired' }];
+  f.setDiscover(async () => [{ ...consoles[1], hostId: 'NEW-TARGET' }]); await f.find();
+  finish(true); await until(() => checked, 'The old pairing check did not settle');
+  assert.equal(document.getElementById('pairingState').classList.contains('paired'), false);
+  assert.match(document.getElementById('pairingState').textContent, /Choose the OFW/);
+  assert.equal(document.getElementById('sidebarConsole').classList.contains('connected'), false);
+  assert.deepEqual(f.errors, []);
+});
+
+// Function Armed Console
+async function armConsole(f, console) {
+  const { document, window } = f;
+  f.setDiscover(async () => [plain(console)]); await f.find();
+  radio(f, 'ofw', console.host).click();
+  document.getElementById('downloadBtn').click();
+  await until(() => window.cmpFixture.calls.downloads.length === 1, 'The console did not open its browse session');
+  window.cmpFixture.emit({ type: 'done', message: 'Browse session finished' });
+  document.getElementById('assets').value = '/custom/existing-saves';
+  document.getElementById('metadata').value = '/custom/existing-metadata.db';
+  return document.getElementById('output').value;
+}
+
+for (const [firmware, description] of [['14220000', 'major/minor firmware upgrade'], ['13600001', 'raw firmware patch revision']]) {
+  test(`a ${description} clears armed transfer flags while preserving the selected profile`, async t => {
+    const f = await app(t);
+    const { document, window } = f;
+    const target = consoles[0];
+    const output = await armConsole(f, target);
+    f.setDiscover(async () => [{ ...target, firmware }]); await f.find();
+    assert.equal(document.getElementById('output').value, output);
+    assert.equal(document.getElementById('assets').value, '/custom/existing-saves');
+    assert.equal(document.getElementById('metadata').value, '/custom/existing-metadata.db');
+    assert.equal(document.getElementById('consoleSelect').selectedOptions[0].dataset.firmware, firmware);
+    assert.equal(radio(f, 'ofw', target.host).checked, true);
+    document.getElementById('downloadBtn').click();
+    await until(() => window.cmpFixture.calls.downloads.length === 2, 'The updated console could not start its next transfer');
+    const job = window.cmpFixture.calls.downloads[1];
+    assert.equal(job.clientHost, target.host);
+    assert.equal(job.hostId, target.hostId);
+    assert.equal(job.systemVersion, firmware);
+    assert.equal(job.output, output);
+    assert.equal(job.assets, '/custom/existing-saves');
+    assert.equal(job.metadata, '/custom/existing-metadata.db');
+    assert.equal(job.skipLaunch, false);
+    assert.equal(job.skipPower, false);
+    assert.deepEqual(f.errors, []);
+  });
+}
+
+test('manual refresh of the same target firmware clears its armed flags without resetting profile paths', async t => {
+  const f = await app(t);
+  const { document, window } = f;
+  const target = consoles[0], firmware = '14220000';
+  const output = await armConsole(f, target);
+  f.setDiscover(async () => [{ ...target, firmware }]);
+  const count = f.calls.discover.length;
+  document.getElementById('manualHost').value = target.host;
+  document.getElementById('manualConnectBtn').click();
+  await until(() => f.calls.discover.length === count + 1 && !document.getElementById('manualConnectBtn').disabled,
+    'Manual refresh of the selected target did not finish');
+  assert.equal(f.calls.discover.at(-1).targetHost, target.host);
+  assert.equal(document.getElementById('output').value, output);
+  assert.equal(document.getElementById('assets').value, '/custom/existing-saves');
+  assert.equal(document.getElementById('metadata').value, '/custom/existing-metadata.db');
+  assert.equal(radio(f, 'ofw', target.host).checked, true);
+  document.getElementById('downloadBtn').click();
+  await until(() => window.cmpFixture.calls.downloads.length === 2, 'The manually refreshed console could not browse');
+  const job = window.cmpFixture.calls.downloads[1];
+  assert.equal(job.systemVersion, firmware);
+  assert.equal(job.skipLaunch, false);
+  assert.equal(job.skipPower, false);
+  assert.deepEqual(f.errors, []);
+});
+
+test('a prepared upload refreshes firmware and armed flags without losing its pending selections', async t => {
+  const f = await app(t);
+  const { document, window } = f;
+  const target = consoles[0], firmware = '14220000';
+  const output = await armConsole(f, target);
+  const uploads = [];
+  window.saveTransfer.upload = async value => { uploads.push(plain(value)); };
+  document.querySelector('[data-page="upload"]').click();
+  document.getElementById('uploadBtn').click();
+  await until(() => !document.getElementById('confirmUploadBtn').hidden,
+    'Preparing the upload did not expose its selections');
+  const saveSelect = document.getElementById('uploadSaveSelect');
+  const userSelect = document.getElementById('userSelect');
+  assert.ok(saveSelect.options[0]); saveSelect.options[0].selected = true;
+  const selectedSave = saveSelect.options[0].value, selectedUser = userSelect.value;
+  document.querySelector('[data-page="console"]').click();
+  f.setDiscover(async () => [{ ...target, firmware }]); await f.find();
+  assert.equal(document.getElementById('confirmUploadBtn').hidden, false);
+  assert.equal(saveSelect.selectedOptions[0].value, selectedSave);
+  assert.equal(userSelect.value, selectedUser);
+  assert.equal(document.getElementById('metadata').value, '/custom/existing-metadata.db');
+  document.querySelector('[data-page="upload"]').click();
+  document.getElementById('confirmUploadBtn').click();
+  await until(() => uploads.length === 1, 'The prepared upload did not start after the firmware rescan');
+  assert.equal(uploads[0].clientHost, target.host);
+  assert.equal(uploads[0].hostId, target.hostId);
+  assert.equal(uploads[0].systemVersion, firmware);
+  assert.equal(uploads[0].skipLaunch, false);
+  assert.equal(uploads[0].skipPower, false);
+  assert.equal(uploads[0].metadata, '/custom/existing-metadata.db');
+  assert.equal(uploads[0].output, output);
+  assert.equal(uploads[0].userId, selectedUser);
+  assert.deepEqual(uploads[0].entryIds, [Number(selectedSave)]);
+  assert.deepEqual(f.errors, []);
+});
+
+test('an inventory fallback uses refreshed firmware while preserving desired upload selections', async t => {
+  const f = await app(t);
+  const { document, window } = f;
+  const target = consoles[0], firmware = '14220000';
+  const output = await armConsole(f, target);
+  const downloads = [], uploads = [];
+  let rejectInventory;
+  window.saveTransfer.inventory = () => new Promise((_resolve, reject) => { rejectInventory = reject; });
+  window.saveTransfer.download = async value => { downloads.push(plain(value)); };
+  window.saveTransfer.upload = async value => { uploads.push(plain(value)); };
+  document.getElementById('metadata').value = '';
+  document.querySelector('[data-page="upload"]').click();
+  const preparation = window.startUpload({ entryIds: [123], userId: '22aabbcc' });
+  await until(() => typeof rejectInventory === 'function', 'Upload preparation did not wait for inventory');
+  f.setDiscover(async () => [{ ...target, firmware }]); await f.find();
+  rejectInventory(new Error('Test previous metadata missing'));
+  await until(() => downloads.length === 1, 'Missing inventory did not fall back to a metadata download');
+  await preparation;
+  assert.equal(downloads[0].metadataOnly, true);
+  assert.equal(downloads[0].clientHost, target.host);
+  assert.equal(downloads[0].hostId, target.hostId);
+  assert.equal(downloads[0].systemVersion, firmware);
+  assert.equal(downloads[0].skipLaunch, false);
+  assert.equal(downloads[0].skipPower, false);
+  assert.equal(downloads[0].output, output);
+  assert.equal(downloads[0].assets, '/custom/existing-saves');
+  window.cmpFixture.emit({ type: 'entries', entries: window.cmpFixture.entries, users: window.cmpFixture.users });
+  window.cmpFixture.emit({ type: 'done', metadataOnly: true, message: 'Fresh metadata ready', users: window.cmpFixture.users });
+  assert.equal(document.getElementById('confirmUploadBtn').hidden, false);
+  assert.equal(document.getElementById('userSelect').value, '22aabbcc');
+  assert.deepEqual([...document.getElementById('uploadSaveSelect').selectedOptions].map(option => option.value), ['123']);
+  assert.equal(document.getElementById('output').value, output);
+  assert.equal(radio(f, 'ofw', target.host).checked, true);
+  const metadata = document.getElementById('metadata').value;
+  document.getElementById('confirmUploadBtn').click();
+  await until(() => uploads.length === 1, 'The selected upload did not continue after fresh metadata');
+  assert.equal(uploads[0].systemVersion, firmware);
+  assert.equal(uploads[0].skipLaunch, false);
+  assert.equal(uploads[0].skipPower, false);
+  assert.equal(uploads[0].output, output);
+  assert.equal(uploads[0].metadata, metadata);
+  assert.equal(uploads[0].userId, '22aabbcc');
+  assert.deepEqual(uploads[0].entryIds, [123]);
+  assert.deepEqual(f.errors, []);
+});
+
+// Function Pending Settings
+function holdSettings(f) {
+  const requests = [];
+  f.window.saveTransfer.saveSettings = value => {
+    let resolve, reject;
+    const promise = new Promise((saved, failed) => { resolve = saved; reject = failed; });
+    requests.push({ value: plain(value), promise, resolve, reject });
+    return promise;
+  };
+  return requests;
+}
+
+// Function Settle Settings
+async function settleSettings(request, error = '') {
+  if (error) request.reject(new Error(error));
+  else request.resolve();
+  await request.promise.catch(() => {});
+}
+
+test('finishing a settings save preserves a newer firmware edit and reports that it remains unsaved', async t => {
+  const f = await app(t);
+  const { document } = f;
+  const requests = holdSettings(f);
+  setLimit(f, '14.22'); document.getElementById('settingsSave').click();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].value.jbFirmwareLimit, '14.22');
+  setLimit(f, '15.00');
+  await settleSettings(requests[0]);
+  assert.equal(document.getElementById('jbFirmwareLimit').value, '15.00');
+  assert.match(document.getElementById('settingsStatus').textContent, /unsaved|not saved/i);
+  document.getElementById('settingsSave').click();
+  assert.equal(requests[1].value.jbFirmwareLimit, '15.00');
+  await settleSettings(requests[1]);
+  assert.equal(document.getElementById('jbFirmwareLimit').value, '15.00');
+  assert.match(document.getElementById('settingsStatus').textContent, /saved/i);
+  assert.doesNotMatch(document.getElementById('settingsStatus').textContent, /unsaved|not saved/i);
+  assert.deepEqual(f.errors, []);
+});
+
+for (const earlierResult of ['success', 'error']) {
+  test(`an earlier settings ${earlierResult} arriving last cannot overwrite the newest save`, async t => {
+    const f = await app(t);
+    const { document } = f;
+    const requests = holdSettings(f);
+    setLimit(f, '14.22'); document.getElementById('settingsSave').click();
+    setLimit(f, '15.00'); document.getElementById('settingsSave').click();
+    assert.equal(requests.length, 2);
+    await settleSettings(requests[1]);
+    const latestStatus = document.getElementById('settingsStatus').textContent;
+    assert.match(latestStatus, /saved/i);
+    assert.doesNotMatch(latestStatus, /unsaved|not saved/i);
+    await settleSettings(requests[0], earlierResult === 'error' ? 'Earlier settings write failed' : '');
+    assert.equal(document.getElementById('jbFirmwareLimit').value, '15.00');
+    assert.equal(document.getElementById('settingsStatus').textContent, latestStatus);
+    assert.deepEqual(f.errors, []);
+  });
+}
+
+test('an older settings error cannot replace the status of a newer pending request', async t => {
+  const f = await app(t);
+  const { document } = f;
+  const requests = holdSettings(f);
+  setLimit(f, '14.22'); document.getElementById('settingsSave').click();
+  setLimit(f, '15.00'); document.getElementById('settingsSave').click();
+  const latestStatus = document.getElementById('settingsStatus').textContent;
+  await settleSettings(requests[0], 'Earlier settings write failed');
+  assert.equal(document.getElementById('jbFirmwareLimit').value, '15.00');
+  assert.equal(document.getElementById('settingsStatus').textContent, latestStatus);
+  await settleSettings(requests[1]);
+  assert.match(document.getElementById('settingsStatus').textContent, /saved/i);
+  assert.doesNotMatch(document.getElementById('settingsStatus').textContent, /failed|unsaved|not saved/i);
+  assert.deepEqual(f.errors, []);
+});
+
+test('an older settings success cannot hide the latest settings failure', async t => {
+  const f = await app(t);
+  const { document } = f;
+  const requests = holdSettings(f);
+  setLimit(f, '14.22'); document.getElementById('settingsSave').click();
+  setLimit(f, '15.00'); document.getElementById('settingsSave').click();
+  await settleSettings(requests[1], 'Latest settings write failed');
+  const latestStatus = document.getElementById('settingsStatus').textContent;
+  assert.match(latestStatus, /Latest settings write failed/);
+  await settleSettings(requests[0]);
+  assert.equal(document.getElementById('jbFirmwareLimit').value, '15.00');
+  assert.equal(document.getElementById('settingsStatus').textContent, latestStatus);
+  assert.deepEqual(f.errors, []);
+});
+
+test('an invalid newer Save supersedes an earlier pending valid settings request', async t => {
+  const f = await app(t);
+  const { document } = f;
+  const requests = holdSettings(f);
+  setLimit(f, '14.22'); document.getElementById('settingsSave').click();
+  setLimit(f, '13.6'); document.getElementById('settingsSave').click();
+  const validationStatus = document.getElementById('settingsStatus').textContent;
+  assert.equal(requests.length, 1, 'An invalid firmware maximum must not reach settings persistence');
+  assert.match(validationStatus, /maximum JB firmware/);
+  await settleSettings(requests[0]);
+  assert.equal(document.getElementById('jbFirmwareLimit').value, '13.6');
+  assert.equal(document.getElementById('settingsStatus').textContent, validationStatus);
+  assert.deepEqual(f.errors, []);
+});

@@ -97,7 +97,7 @@ test('radio groups and accessible labels identify independent JB and OFW choices
   f.choose('ofw', second.host);
   assert.equal(jb.checked, true); assert.equal(ofw.checked, true);
   assert.equal(f.calls.length, 2);
-  assert.equal(f.calls[0][0], 'jb'); assert.equal(f.calls[0][1].hostId, first.hostId);
+  assert.equal(f.calls[0][0], 'jb'); assert.equal(f.calls[0][1].hostId, first.hostId.toUpperCase());
   assert.equal(f.calls[1][0], 'ofw'); assert.equal(f.calls[1][1].host, second.host);
 });
 
@@ -214,7 +214,7 @@ test('pairing statuses use safe labels and refresh without replacing focused rol
   assert.deepEqual(f.calls, []);
 });
 
-test('Type and full Console ID render safely and refresh without changing raw identity', t => {
+test('Type and full Console ID render safely with canonical identity casing', t => {
   const f = fixture(t), host = '192.168.0.42';
   const rawId = '  <img src=x>0123456789ABCDEF0123456789ABCDEF  ';
   const console = { ...ps5(host), type: ' PS5 ', hostId: rawId };
@@ -224,21 +224,22 @@ test('Type and full Console ID render safely and refresh without changing raw id
   assert.equal(row.cells[1].textContent, 'PS5');
   assert.equal(row.cells[2].textContent, host);
   assert.equal(row.cells[4].className, 'console-locator-id');
-  assert.equal(row.cells[4].textContent, rawId.trim());
-  assert.equal(row.cells[4].title, rawId.trim());
+  assert.equal(row.cells[4].textContent, rawId.trim().toUpperCase());
+  assert.equal(row.cells[4].title, rawId.trim().toUpperCase());
   assert.equal(row.querySelector('img'), null);
   f.choose('ofw', host);
-  assert.equal(f.calls[0][1].hostId, rawId);
+  assert.equal(f.calls[0][1].hostId, rawId.trim().toUpperCase());
+  assert.equal(f.calls[0][1].firmware, console.firmware);
   input.focus();
   f.locator.render([{ ...console, type: 'ps5', hostId: ' AABBCCDDEEFF00112233445566778899 ' }]);
   assert.equal(f.pick('ofw', host), input);
   assert.equal(f.document.activeElement, input);
-  assert.equal(row.cells[1].textContent, 'ps5');
+  assert.equal(row.cells[1].textContent, 'PS5');
   assert.equal(row.cells[4].textContent, 'AABBCCDDEEFF00112233445566778899');
   assert.equal(row.cells[4].title, 'AABBCCDDEEFF00112233445566778899');
   f.locator.render([{ ...console, type: '<b>PS4</b>', hostId: '<script>identity</script>' }]);
-  assert.equal(row.cells[1].textContent, '<b>PS4</b>');
-  assert.equal(row.cells[4].textContent, '<script>identity</script>');
+  assert.equal(row.cells[1].textContent, '<B>PS4</B>');
+  assert.equal(row.cells[4].textContent, '<SCRIPT>IDENTITY</SCRIPT>');
   assert.equal(row.querySelector('b, script'), null);
   f.locator.render([{ host, type: ' ', firmware: '13.60', hostId: 123 }]);
   assert.equal(row.cells[1].textContent, 'Unknown');
@@ -246,4 +247,37 @@ test('Type and full Console ID render safely and refresh without changing raw id
   assert.equal(f.pick('jb', host).disabled, true);
   assert.equal(f.pick('ofw', host).disabled, true);
   assert.equal(f.calls.length, 1);
+});
+
+test('pairing-only updates change one status cell without touching rows, roles or focus', async t => {
+  const f = fixture(t), first = ps5('192.168.0.1'), second = ps5('192.168.0.2');
+  f.locator.render([{ ...first, pairing: 'checking' }, { ...second, pairing: 'unpaired' }], { jbHost: first.host, targetHost: second.host });
+  const input = f.pick('ofw', second.host), row = input.closest('tr'), cell = row.cells[5];
+  const rowOrder = [...f.tbody.children], cells = [...row.children], mutations = [];
+  input.focus();
+  const observer = new f.dom.window.MutationObserver(records => mutations.push(...records));
+  observer.observe(f.tbody, { subtree: true, attributes: true, childList: true, characterData: true });
+  assert.equal(f.locator.updatePairing(' 192.168.000.002 ', 'paired'), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(mutations.length > 0);
+  assert.equal(mutations.every(mutation => mutation.target === cell || cell.contains(mutation.target)), true);
+  assert.deepEqual([...f.tbody.children], rowOrder); assert.deepEqual([...row.children], cells);
+  assert.equal(f.document.activeElement, input); assert.equal(input.checked, true);
+  assert.equal(f.pick('jb', first.host).checked, true);
+  assert.equal(cell.textContent, 'Paired'); assert.equal(cell.dataset.pairing, 'paired');
+  assert.equal(f.pick('jb', first.host).closest('tr').cells[5].textContent, 'Checking…');
+  assert.deepEqual(f.calls, []);
+  mutations.length = 0;
+  assert.equal(f.locator.updatePairing(second.host, 'paired'), true);
+  assert.equal(f.locator.updatePairing('192.168.0.99', 'paired'), false);
+  assert.equal(f.locator.updatePairing('invalid', 'paired'), false);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(mutations.length, 0);
+  f.choose('ofw', second.host);
+  assert.equal(f.calls[0][1].pairing, 'paired');
+  assert.equal(f.calls[0][1].firmware, second.firmware);
+  assert.equal(f.locator.updatePairing(second.host, '<img src=x>'), true);
+  assert.equal(cell.textContent, 'Unknown'); assert.equal(cell.dataset.pairing, 'unknown');
+  assert.equal(cell.querySelector('img'), null);
+  observer.disconnect();
 });

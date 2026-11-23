@@ -25,6 +25,21 @@ Pairing retains the 32-byte approval value from the console's Data Transfer
 request, keyed by Console ID and firmware. Connections use the current IPv4;
 the saved pairing is selected by identity rather than by its address.
 
+FINDER CLEANUP
+Console details are normalized before selecting roles or comparing identity.
+Console ID capitalization and extra spaces in Type do not change selection.
+If an IP reports another console, the list, sidebar and pairing panel require
+an OFW selection again before starting a transfer. Existing files are retained.
+Settings and the finder share the same maximum-JB-firmware validation.
+Pairing statuses use a single lookup batch for each refresh and update their
+cells directly. The pairing format and handshake are unchanged.
+Paired indicators use the selected skin's success color.
+Changing the discovered firmware clears cached live-transfer approval so the
+next transfer starts a fresh session. A prepared upload uses the new firmware
+and fresh-session flags while retaining its selected user, files and metadata.
+Settings saves preserve newer firmware-limit edits made while saving, and late
+results from older saves cannot replace the latest status or draft.
+
 EDITOR FILE TREE
 Edit your save now groups decrypted files into expandable folders.
 Right-click a file and choose Replace file to select a replacement on your PC.

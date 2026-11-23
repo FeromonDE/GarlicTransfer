@@ -9,7 +9,7 @@ const path = require('node:path');
 const { startRemoteOracle, stopRemoteOracle } = require('./remote_oracle.cjs');
 const { loadSettings, saveSettings } = require('./config.cjs');
 const { titleName } = require('./titles.cjs');
-const { pairingPrefixPath, existingPairingPrefix, pairingInfo } = require('./pairing_store.cjs');
+const { pairingPrefixPath, existingPairingPrefix, pairingInfo, pairingInfos } = require('./pairing_store.cjs');
 const { registerSaveEditor } = require('./save_editor.cjs');
 const { LocalPcStore } = require('./local_pc.cjs');
 const { AccountStore } = require('./account_store.cjs');
@@ -256,7 +256,11 @@ function getConsoles(options) {
       if (code !== 0) return reject(new Error(buffer.trim() || 'console discovery failed'));
       try {
         const consoles = JSON.parse(buffer).consoles || [];
-        recordConsoleNames(options.profileRoot || options.output, consoles);
+        const selectedId = String(options.hostId || '').trim().toUpperCase();
+        const namedConsoles = consoles.map(console => typeof options.profileId === 'string' && selectedId
+          && typeof console.hostId === 'string' && console.hostId.trim().toUpperCase() === selectedId
+          ? { ...console, profileId: options.profileId } : console);
+        recordConsoleNames(options.profileRoot || options.output, namedConsoles);
         resolve(consoles);
       } catch (error) {
         reject(error);
@@ -619,6 +623,7 @@ ipcMain.handle('transfer:pair-status', (_event, identity) => {
   return Boolean(existingPairingPrefix(app.getPath('userData'), identity));
 });
 ipcMain.handle('transfer:pair-info', (_event, identity) => pairingInfo(app.getPath('userData'), identity));
+ipcMain.handle('transfer:pair-infos', (_event, identities) => pairingInfos(app.getPath('userData'), identities));
 ipcMain.handle('transfer:select', (_event, entryIds) => {
   if (!active || active.kind !== 'download' || !active.awaitingSelection || !active.process) {
     throw new Error('no download session is waiting for a selection');

@@ -334,8 +334,8 @@ button:disabled { opacity: .4; cursor: default; }
 .console-locator-type, .console-locator-id { white-space: nowrap; }
 .console-locator-id { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .console-locator-pairing { white-space: nowrap; }
-.console-locator-pairing[data-pairing="paired"] { color: #55d98d; }
-.console-locator-pairing[data-pairing="previous"] { color: var(--gold); }
+.console-locator-pairing[data-pairing="paired"] { color: inherit; box-shadow: inset 3px 0 var(--success); }
+.console-locator-pairing[data-pairing="previous"] { color: inherit; box-shadow: inset 3px 0 var(--gold); }
 .console-locator-current { margin-top: 14px; max-width: 340px; }
 .jb-firmware-setting { max-width: 220px; margin-bottom: 8px; }
 .manual-drawer { margin-top: 14px; }
@@ -359,7 +359,7 @@ button:disabled { opacity: .4; cursor: default; }
   flex-wrap: wrap;
 }
 .pairing-hint { font-size: 12px; color: var(--text-3); }
-#pairingState.paired { color: #55d98d; font-weight: 700; }
+#pairingState.paired { color: inherit; font-weight: 700; border-left: 3px solid var(--success); padding-left: 8px; }
 
 /* ── Tables ── */
 .table-wrap { max-height: 320px; overflow: auto; border-radius: 6px; }

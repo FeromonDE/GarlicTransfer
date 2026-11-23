@@ -52,35 +52,81 @@ function pairingFile(root, selected) {
   }
 }
 
-// Function Pairing Information
-function pairingInfo(userData, identity) {
-  if (!identity || typeof identity.hostId !== 'string' || identity.hostId.length !== 12 || !/^[0-9a-f]{12}$/i.test(identity.hostId)
-      || typeof identity.systemVersion !== 'string' || identity.systemVersion.length !== 8 || !/^[0-9a-f]{8}$/i.test(identity.systemVersion)) {
-    return { status: 'unknown' };
+// Function Pairing Cache
+function readOnce(cache, key, read) {
+  if (!cache.has(key)) {
+    try { cache.set(key, { value: read() }); }
+    catch (error) { cache.set(key, { error }); }
   }
-  let base;
-  try { base = fs.realpathSync(userData); }
-  catch (error) {
-    if (error.code === 'ENOENT') return { status: 'unpaired' };
-    throw error;
-  }
-  const folder = pairingDirectory(base, path.join(userData, 'pairings'));
-  if (!folder) return { status: 'unpaired' };
-  const current = pairingPrefixPath(userData, identity);
-  const currentFolder = pairingDirectory(folder, path.dirname(current));
-  if (currentFolder && existingPairingPrefix(userData, identity) && pairingFile(currentFolder, current)) {
-    return { status: 'paired' };
-  }
-  const host = identity.hostId.toUpperCase();
-  const firmware = identity.systemVersion.toUpperCase();
-  for (const name of fs.readdirSync(folder)) {
-    if (name.length !== 21) continue;
-    const match = /^([0-9a-f]{12})-([0-9a-f]{8})$/i.exec(name);
-    if (!match || match[1].toUpperCase() !== host || match[2].toUpperCase() === firmware) continue;
-    const previous = pairingDirectory(folder, path.join(folder, name));
-    if (previous && pairingFile(previous, path.join(previous, 'pairing-prefix.bin'))) return { status: 'previous' };
-  }
-  return { status: 'unpaired' };
+  const result = cache.get(key);
+  if (Object.hasOwn(result, 'error')) throw result.error;
+  return result.value;
 }
 
-module.exports = { pairingPrefixPath, existingPairingPrefix, pairingInfo };
+// Function Pairing Lookup
+function pairingLookup(userData) {
+  const shared = new Map(), directories = new Map(), prefixes = new Map(), identities = new Map();
+  const folderAt = (root, selected) => readOnce(directories, selected, () => pairingDirectory(root, selected));
+  const prefixAt = (root, identity = null) => readOnce(prefixes, path.join(root, 'pairing-prefix.bin'), () => {
+    if (identity && !existingPairingPrefix(userData, identity)) return false;
+    return pairingFile(root, path.join(root, 'pairing-prefix.bin'));
+  });
+  const pairingRoot = () => readOnce(shared, 'root', () => {
+    let base;
+    try { base = fs.realpathSync(userData); }
+    catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+    return folderAt(base, path.join(userData, 'pairings'));
+  });
+  const history = folder => readOnce(shared, 'history', () => {
+    const hosts = new Map();
+    for (const name of fs.readdirSync(folder)) {
+      if (name.length !== 21) continue;
+      const match = /^([0-9a-f]{12})-([0-9a-f]{8})$/i.exec(name);
+      if (!match) continue;
+      const host = match[1].toUpperCase();
+      if (!hosts.has(host)) hosts.set(host, []);
+      hosts.get(host).push({ name, firmware: match[2].toUpperCase() });
+    }
+    return hosts;
+  });
+  return identity => {
+    if (!identity || typeof identity.hostId !== 'string' || identity.hostId.length !== 12 || !/^[0-9a-f]{12}$/i.test(identity.hostId)
+        || typeof identity.systemVersion !== 'string' || identity.systemVersion.length !== 8 || !/^[0-9a-f]{8}$/i.test(identity.systemVersion)) {
+      return 'unknown';
+    }
+    const host = identity.hostId.toUpperCase(), firmware = identity.systemVersion.toUpperCase();
+    return readOnce(identities, `${host}-${firmware}`, () => {
+      const folder = pairingRoot();
+      if (!folder) return 'unpaired';
+      const current = folderAt(folder, path.join(folder, `${host}-${firmware}`));
+      if (current && prefixAt(current, identity)) return 'paired';
+      for (const previous of history(folder).get(host) || []) {
+        if (previous.firmware === firmware) continue;
+        const directory = folderAt(folder, path.join(folder, previous.name));
+        if (directory && prefixAt(directory)) return 'previous';
+      }
+      return 'unpaired';
+    });
+  };
+}
+
+// Function Pairing Information
+function pairingInfo(userData, identity) {
+  return { status: pairingLookup(userData)(identity) };
+}
+
+// Function Pairing Batch
+function pairingInfos(userData, identities) {
+  if (!Array.isArray(identities)) throw new TypeError('Pass an array of console identities.');
+  if (identities.length > 256) throw new Error('Check no more than 256 consoles at once.');
+  const lookup = pairingLookup(userData);
+  return Array.from(identities, identity => {
+    try { return { status: lookup(identity) }; }
+    catch { return { status: 'unknown' }; }
+  });
+}
+
+module.exports = { pairingPrefixPath, existingPairingPrefix, pairingInfo, pairingInfos };
