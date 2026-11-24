@@ -106,7 +106,11 @@
 
         <div class="card">
           <h3>Pairing</h3>
-          <p class="card-hint">Pair your PS5 once to enable save transfers without a jailbroken console on the same network.</p>
+          <p class="card-hint">Enter the PSN account ID of the selected OFW PS5 to browse saves without menu pairing, or use the standard pairing option.</p>
+          <label for="manualAccountId">PSN account ID (optional, decimal)
+            <input id="manualAccountId" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="Unsigned decimal account ID" aria-describedby="manualAccountHint" disabled>
+          </label>
+          <p id="manualAccountHint" class="card-hint">Use the account ID of the source or receiving PS5, not the JB helper. Leave blank to use existing pairing or metadata, or to pair this PS5. The ID is not saved in settings.</p>
           <div class="pair-group">
             <button id="pairBtn" type="button" disabled>Pair this PS5</button>
             <span id="pairingState" class="pairing-hint">Discover a PS5 to check pairing.</span>

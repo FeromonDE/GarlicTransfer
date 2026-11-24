@@ -774,3 +774,59 @@ test('an invalid newer Save supersedes an earlier pending valid settings request
   assert.equal(document.getElementById('settingsStatus').textContent, validationStatus);
   assert.deepEqual(f.errors, []);
 });
+
+test('manual OFW account ID reaches the browse backend without numeric conversion', async t => {
+  const f = await app(t);
+  await f.find();
+  const input = f.document.getElementById('manualAccountId');
+  assert.equal(input.disabled, true);
+  radio(f, 'ofw', consoles[1].host).click();
+  assert.equal(input.disabled, false);
+  input.value = '18446744073709551615';
+  radio(f, 'jb', consoles[0].host).click();
+  assert.equal(input.value, '18446744073709551615');
+  f.document.getElementById('downloadBtn').click();
+  await until(() => f.window.cmpFixture.calls.downloads.length === 1, 'Manual account browse did not start');
+  const request = f.window.cmpFixture.calls.downloads[0];
+  assert.equal(request.accountId, '18446744073709551615');
+  assert.equal(request.hostId, 'TARGET');
+  assert.equal(request.oracleHost, consoles[0].host);
+  assert.equal(input.disabled, true);
+  assert.deepEqual(f.errors, []);
+});
+
+test('invalid decimal account IDs never start a browse; empty input retains the default path', async t => {
+  const f = await app(t);
+  await f.find();
+  radio(f, 'ofw', consoles[1].host).click();
+  const input = f.document.getElementById('manualAccountId');
+  for (const invalid of ['0', '-1', '1e18', '0x1234', '18446744073709551616', '123456789012345678901']) {
+    input.value = invalid;
+    f.document.getElementById('downloadBtn').click();
+    assert.match(f.document.getElementById('status').textContent, /valid decimal PSN account ID/);
+    assert.equal(f.window.cmpFixture.calls.downloads.length, 0);
+  }
+  input.value = '';
+  f.document.getElementById('downloadBtn').click();
+  await until(() => f.window.cmpFixture.calls.downloads.length === 1, 'Default browse did not start');
+  assert.equal(f.window.cmpFixture.calls.downloads[0].accountId, undefined);
+  assert.deepEqual(f.errors, []);
+});
+
+test('manual account ID is cleared for a different OFW console or changed console identity', async t => {
+  const f = await app(t);
+  await f.find();
+  radio(f, 'ofw', consoles[1].host).click();
+  const input = f.document.getElementById('manualAccountId');
+  input.value = '12345678901234567890';
+  await f.find();
+  assert.equal(input.value, '12345678901234567890');
+  radio(f, 'ofw', consoles[2].host).click();
+  assert.equal(input.value, '');
+  input.value = '12345678901234567890';
+  f.setDiscover(async () => [{ ...consoles[2], hostId: 'CHANGED' }]);
+  await f.find();
+  assert.equal(input.value, '');
+  assert.equal(input.disabled, true);
+  assert.deepEqual(f.errors, []);
+});

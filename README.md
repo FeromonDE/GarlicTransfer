@@ -21,7 +21,7 @@ This is research software. Back up your saves before using Upload. Upload can ov
 - Automatic source power signal and optional clean `DisconnectPS5` reboot after downloading.
 - Local or volunteer PPR oracle support.
 
-Console-to-PC downloading has been exercised on 13.60. On one tested 14.22 console, browsing from the home screen and downloading the save list worked with the decimal PSN account ID. GarlicTransfer accepts that ID directly or reads it from a standard PS4 USB backup folder. The one-time Data Transfer menu pairing alternative is experimental: its listener has automated protocol tests but has not yet completed a live PS5 pairing. Other firmware versions use the inferred major-version mapping and remain unverified.
+Console-to-PC downloading has been exercised on 13.60. On one tested 14.22 console, browsing from the home screen and downloading the save list worked with the decimal PSN account ID. This fork accepts that ID directly in the Console page. The USB backup picker is not included. The one-time Data Transfer menu pairing alternative is experimental: its listener has automated protocol tests but has not yet completed a live PS5 pairing. Other firmware versions use the inferred major-version mapping and remain unverified.
 
 ## Requirements
 
@@ -133,14 +133,14 @@ See [SKINS.md](SKINS.md) for the format and fallback behavior.
 ## Download saves
 
 1. Start GarlicTransfer and click **Discover consoles**.
-2. Select the source console. The verified first browse on 14.22 used a decimal PSN account ID. Enter that ID, or click **Find in PS4 USB backup** to derive it from the USB drive, its `PS4` or `SAVEDATA` folder, or the 16-hex-digit account folder inside `SAVEDATA`. The USB picker has not been live-tested end to end. GarlicTransfer only reads folder names; it does not import or modify the PS4 save. After a successful browse, the per-console `metadata.db` supplies the ID automatically.
-   On Windows, **Pair this PS5 once (experimental)** offers a menu-based alternative that has not yet been verified on a live PS5. Start its listener, then open **Settings → System → System Software → Data Transfer** on the PS5 and select **GarlicTransfer Pairing**. The PS5 may say **Can't transfer data**; no save migration starts. If GarlicTransfer confirms pairing, return to the home screen. The captured identifier stays in the app's private user-data folder for this console and firmware. If pairing does not complete, use the account-ID or USB route. Linux and macOS use those routes as well.
+2. Select the source console (OFW) on the **Console** page. In **Pairing**, enter its owner's decimal **PSN account ID (optional, decimal)**. The field is not saved to settings and is cleared if the selected transfer console changes. After a successful browse, the per-console `metadata.db` can supply the ID automatically. The PS4 USB picker is not included in this fork.
+   On Windows, **Pair this PS5 once (experimental)** offers a menu-based alternative that has not yet been verified on a live PS5. Start its listener, then open **Settings → System → System Software → Data Transfer** on the PS5 and select **GarlicTransfer Pairing**. The PS5 may say **Can't transfer data**; no save migration starts. If GarlicTransfer confirms pairing, return to the home screen. The captured identifier stays in the app's private user-data folder for this console and firmware. If pairing does not complete, use manual account-ID entry instead. Linux and macOS can also use the manual entry.
 3. Click **Browse console saves** while the PS5 is at its home screen; you do not need to open Data Transfer on the PS5 first.
 4. If asked, briefly press the console power button until it beeps and release.
 5. Select one or more saves and click **Download selected**, or use the per-save Download button.
 6. Keep the session open for more selections, or choose **Finish and reboot console**.
 
-The account ID is used to construct the local Data Transfer approval request. It is not a password or PSN login. The app passes it to the Python backend over standard input, rather than placing it in the process command line. Enter it as a decimal string: JavaScript numbers cannot preserve every 64-bit account ID. If `PS4/SAVEDATA` contains several account folders, select the account folder for the same PSN user as the PS5 profile being browsed.
+The account ID is used to construct the local Data Transfer approval request. It is not a password or PSN login. The app passes it to the Python backend over standard input, rather than placing it in the process command line. Enter it as a decimal string: JavaScript numbers cannot preserve every 64-bit account ID. Use the ID of the same PSN user as the PS5 profile being browsed, not the JB helper.
 
 If the PS5 rejects a stored pairing with result `0x11`, it may belong to a different PSN user. Pair this PS5 again on Windows or enter the correct decimal account ID.
 

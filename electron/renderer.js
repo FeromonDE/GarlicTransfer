@@ -11,7 +11,7 @@ for (const id of [
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log', 'saveSearch',
-  'consoleSelect', 'consoleLocatorRows', 'jbFirmwareLimit', 'transferConsoleHost', 'transferConsoleLabel', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
+  'consoleSelect', 'consoleLocatorRows', 'jbFirmwareLimit', 'transferConsoleHost', 'transferConsoleLabel', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'manualAccountId', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
   'browseLocalBtn', 'localBrowser', 'localEntries', 'importModal', 'importWarning', 'confirmImportBtn', 'cancelImportBtn',
 ]) controls[id] = byId(id);
@@ -28,6 +28,7 @@ let firmwareLimitEditVersion = 0;
 let locatedConsoles = [];
 let selectedJbConsole = null;
 let targetIdentityChanged = false;
+let manualAccountConsole = '';
 let consoleLocator = null;
 let currentPage = 'console';
 let pendingImport = null;
@@ -160,6 +161,30 @@ function options() {
     skipLaunch: dataTransferArmedHost === clientHost && !controls.preferIpv6.checked,
     skipPower: dataTransferArmedHost === clientHost && !controls.preferIpv6.checked,
   };
+}
+
+// Keep uint64 PSN identifiers as strings: Number would lose precision.
+function applyManualAccountId(current) {
+  const id = controls.manualAccountId.value.trim();
+  if (!id) return true;
+  if (!/^[0-9]{1,20}$/.test(id) || BigInt(id) === 0n || BigInt(id) > 0xffffffffffffffffn) {
+    status('Enter a valid decimal PSN account ID (1 to 18446744073709551615).');
+    return false;
+  }
+  current.accountId = id;
+  return true;
+}
+
+// Scope the unsaved input to the selected transfer console, not the JB helper.
+function refreshManualAccountControl() {
+  const selected = controls.consoleSelect.selectedOptions[0];
+  const key = !targetIdentityChanged && selected?.value
+    ? JSON.stringify([selected.value, selected.dataset.hostId || '']) : '';
+  if (key !== manualAccountConsole) {
+    controls.manualAccountId.value = '';
+    manualAccountConsole = key;
+  }
+  controls.manualAccountId.disabled = !key || consoleSelectionLocked();
 }
 
 function formatFirmware(value) {
@@ -407,6 +432,7 @@ function applyConsoleProfile() {
 }
 
 async function refreshPairingStatus() {
+  refreshManualAccountControl();
   const version = ++selectedPairingVersion;
   const selected = controls.consoleSelect.selectedOptions[0];
   const identity = { hostId: selected?.dataset.hostId || '', systemVersion: selected?.dataset.firmware || '' };
@@ -438,10 +464,10 @@ async function refreshPairingStatus() {
 function showPairingState(state) {
   controls.pairingState.classList.toggle('paired', state === 'paired');
   controls.pairingState.textContent = state === 'paired' ? uiText('Paired!')
-    : state === 'previous' ? uiText('Paired on another firmware. Pair this PS5 again.')
-    : state === 'unpaired' ? uiText('Not paired yet. Pair this PS5 to continue.')
+    : state === 'previous' ? uiText('Paired on another firmware. Pair this PS5 again or enter its account ID.')
+    : state === 'unpaired' ? uiText('Not paired yet. Enter its account ID or pair this PS5.')
     : state === 'checking' ? uiText('Checking whether this PS5 has been paired…')
-    : uiText('Pairing status unavailable. You can pair this PS5 to continue.');
+    : uiText('Pairing status unavailable. Enter its account ID or pair this PS5.');
 }
 
 function saveEntriesMatchingSearch() {
@@ -494,6 +520,7 @@ function busy(value, { keepDialogs = false } = {}) {
   controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || !controls.consoleSelect.value || disabled || browseSessionActive || targetIdentityChanged;
   controls.cancelBtn.disabled = !value;
   controls.consoleSelect.disabled = disabled || browseSessionActive;
+  refreshManualAccountControl();
   controls.discoverBtn.disabled = disabled || browseSessionActive || discoveryPending;
   controls.manualConnectBtn.disabled = disabled || browseSessionActive || manualConnectionPending;
   if (controls.jbFirmwareLimit) controls.jbFirmwareLimit.disabled = disabled || browseSessionActive;
@@ -791,6 +818,7 @@ async function browseSaves(forUpload = false) {
     status('Discover and select a console first.');
     return;
   }
+  if (!applyManualAccountId(current)) return;
   pendingBrowserHost = current.clientHost;
   activeTransfer = forUpload ? 'upload-metadata' : 'browse';
   busy(true);
@@ -958,6 +986,10 @@ async function startUpload({ entryIds = null, userId = null, external = null } =
   if (!current.clientHost) {
     resetUploadUI();
     status('Discover and select a console first.');
+    return;
+  }
+  if (!applyManualAccountId(current)) {
+    resetUploadUI();
     return;
   }
   byId('uploadDestination').hidden = false;
