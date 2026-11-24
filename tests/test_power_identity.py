@@ -79,6 +79,25 @@ class PowerIdentityTests(unittest.TestCase):
         self.assertEqual(struct.unpack_from("<I", body, 76)[0], 0x14220000)
         self.assertEqual(struct.unpack_from("<I", body, 84)[0], 0x14220000)
 
+    def test_1420_auto_uses_experimental_new_template_and_preserves_other_fields(self):
+        body = build_power_request_body(0x14200007, 3, "001122334455", power_request_prefix(ACCOUNT_ID))
+        self.assertEqual(struct.unpack_from("<I", body, 48)[0], 0x284)
+        self.assertEqual(body[:32], EXPECTED)
+        self.assertEqual(struct.unpack_from("<I", body, 76)[0], 0x14200007)
+        self.assertEqual(struct.unpack_from("<I", body, 84)[0], 0x14200007)
+
+    def test_manual_template_override_changes_only_the_selected_field(self):
+        args = (0x14200007, 3, "001122334455", power_request_prefix(ACCOUNT_ID))
+        old = build_power_request_body(*args, template="0x282")
+        new = build_power_request_body(*args, template="0x284")
+        self.assertEqual(struct.unpack_from("<I", old, 48)[0], 0x282)
+        self.assertEqual(struct.unpack_from("<I", new, 48)[0], 0x284)
+        self.assertEqual(old[:48] + old[52:], new[:48] + new[52:])
+        with self.assertRaises(ValueError):
+            build_power_request_body(*args, template="invalid")
+        self.assertEqual(struct.unpack_from("<I", build_power_request_body(0x13600007, 2, "001122334455", None), 48)[0], 0x282)
+        self.assertEqual(struct.unpack_from("<I", build_power_request_body(0x14210000, 3, "001122334455", None), 48)[0], 0x282)
+
     def test_1423_request_body_uses_current_product_code(self):
         body = build_power_request_body(
             0x14230000, 3, "001122334455", power_request_prefix(ACCOUNT_ID),

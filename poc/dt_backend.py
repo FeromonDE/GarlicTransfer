@@ -102,7 +102,19 @@ def power_request_prefix(account_id, metadata_path=None, prefix_path=None):
     return hashlib.sha256(raw).digest()
 
 
-def build_power_request_body(firmware_version, hardware, host_id_hex, prefix):
+def power_template_code(firmware_version, mode="auto"):
+    """Select the request field; 14.20 auto selection is experimental."""
+    if mode in ("0x282", "0x284"):
+        return int(mode, 16)
+    if mode != "auto":
+        raise ValueError("Unknown power request template")
+    # 14.22+ was observed upstream; 14.20 is an explicit compatibility experiment.
+    if firmware_version >= 0x14220000 or 0x14200000 <= firmware_version < 0x14210000:
+        return 0x284
+    return 0x282
+
+
+def build_power_request_body(firmware_version, hardware, host_id_hex, prefix, template="auto"):
     body = bytearray(CAPTURED_BODY)
     if prefix is not None:
         if len(prefix) != 32:
@@ -111,9 +123,7 @@ def build_power_request_body(firmware_version, hardware, host_id_hex, prefix):
     if host_id_hex and len(host_id_hex) == 12:
         body[32:38] = bytes.fromhex(host_id_hex)
     struct.pack_into("<I", body, 44, hardware)
-    # Observed in console-generated 14.22+ requests; older templates use 0x282.
-    if firmware_version >= 0x14220000:
-        struct.pack_into("<I", body, 48, 0x284)
+    struct.pack_into("<I", body, 48, power_template_code(firmware_version, template))
     struct.pack_into("<I", body, 76, firmware_version)
     struct.pack_into("<I", body, 84, firmware_version)
     return bytes(body)
@@ -214,16 +224,21 @@ def download(options):
                                     f"(only accepted by {LEGACY_BODY_HOST_ID})")
             hardware = hardware_id(options, response)
             emit("log", message=f"Power request hardware ID: {hardware}")
+            template = options.get("powerTemplate") or "auto"
             body = build_power_request_body(
-                firmware_version, hardware, host_id_hex, prefix,
+                firmware_version, hardware, host_id_hex, prefix, template,
             )
+            code = struct.unpack_from("<I", body, 48)[0]
+            emit("log", message=f"Power request 0x91: template={template}, field48={code:#x}, bytes={len(body)}")
             command = DtChannel(host, 1004, oracle_host, oracle_port, version=protocol_version)
             sub = command.request(0x91, body)
-            result, _ = command.response(0x91, sub)
+            result, response_body = command.response(0x91, sub)
+            emit("log", message=f"Power response 0x91: result={result:#x}, bodyBytes={len(response_body)}, sub={sub:#x}")
             if result == 33:
                 emit("powerRequired", message="Press power button until it beeps and release")
                 emit("status", step=2, message="Briefly press the CLIENT console power button now.")
-                result, _ = command.response(0x91, sub)
+                result, response_body = command.response(0x91, sub)
+                emit("log", message=f"Power confirmation response 0x91: result={result:#x}, bodyBytes={len(response_body)}")
             if result == 0x17:
                 raise RuntimeError(
                     "client rejected Data Transfer with a hardware mismatch (0x17). "
@@ -231,7 +246,11 @@ def download(options):
                 )
             if result != 0:
                 hint = ""
-                if result == 0x11:
+                if result == 0x6:
+                    hint = (f" Rejected before power-button confirmation (template field {code:#x})."
+                            " The exact console error meaning is unverified. Check the console state;"
+                            " the alternative template can be selected in Advanced connection settings.")
+                elif result == 0x11:
                     # shellcore ProcessPwrReqPS5: GetExistedAuthAccount hashed every
                     # user registered on the console and none matched the 32 bytes we
                     # sent, so it reports 17 = "Request User is not exist."

@@ -11,7 +11,7 @@ const configPath = app.isPackaged
   : path.join(__dirname, '..', 'config.ini');
 const fields = [
   'useRemoteOracle', 'serverUrl', 'workerKey', 'oracleHost', 'oraclePort',
-  'interface', 'hardware', 'output', 'metadata', 'assets',
+  'interface', 'hardware', 'powerTemplate', 'output', 'metadata', 'assets',
   'userId', 'titleId', 'entryId', 'userName', 'sourcePort', 'dataPort', 'discoveryPort', 'preferIpv6',
   'uploadDisplayName', 'uiLayout', 'jbFirmwareLimit', 'uiLanguage',
 ];
@@ -23,6 +23,7 @@ const defaults = {
   oraclePort: 9022,
   interface: 'wlp4s0',
   hardware: 0,
+  powerTemplate: 'auto',
   output: defaultDownloads,
   metadata: '',
   assets: defaultDownloads,
@@ -70,6 +71,7 @@ function loadSettings() {
     workerKey: String(stored.workerKey || '').trim() || defaults.workerKey,
     oraclePort: Number(stored.oraclePort || defaults.oraclePort),
     hardware: Number(stored.hardware || defaults.hardware),
+    powerTemplate: ['auto', '0x282', '0x284'].includes(stored.powerTemplate) ? stored.powerTemplate : 'auto',
     entryId: Number(stored.entryId || defaults.entryId),
     sourcePort: Number(stored.sourcePort || defaults.sourcePort),
     dataPort: Number(stored.dataPort || defaults.dataPort),
@@ -88,6 +90,7 @@ function saveSettings(settings) {
   for (const field of fields) {
     const value = field === 'uiLayout' ? (/^[a-z][a-z0-9-]{0,63}$/.test(settings[field] || '') ? settings[field] : 'classic')
       : field === 'uiLanguage' ? i18n.preference(settings[field])
+      : field === 'powerTemplate' ? (['auto', '0x282', '0x284'].includes(settings[field]) ? settings[field] : 'auto')
       : field === 'useRemoteOracle' ? Boolean(settings[field]) : field === 'jbFirmwareLimit' ? limit : settings[field];
     lines.push(`${field}=${value ?? ''}`);
   }

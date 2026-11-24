@@ -463,6 +463,13 @@
             <label>Upload display name<input id="uploadDisplayName" value="GarlicTransfer" maxlength="32" spellcheck="false"></label>
             <label>PC IPv6 interface<input id="interface" value="wlp4s0" spellcheck="false"></label>
             <label>Client hardware ID (0 = auto)<input id="hardware" value="0" inputmode="numeric"></label>
+            <label>Power request template (experimental)
+              <select id="powerTemplate">
+                <option value="auto">Auto (14.20: experimental 0x284)</option>
+                <option value="0x282">0x282 (legacy)</option>
+                <option value="0x284">0x284 (new)</option>
+              </select>
+            </label>
             <label>Source command port<input id="sourcePort" value="1004" inputmode="numeric"></label>
             <label>Source data port<input id="dataPort" value="1005" inputmode="numeric"></label>
             <label>Discovery UDP port<input id="discoveryPort" value="1006" inputmode="numeric"></label>

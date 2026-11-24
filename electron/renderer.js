@@ -6,7 +6,7 @@ window.GarlicI18n.localizeDocument(document);
 const byId = (id) => document.getElementById(id);
 const controls = {};
 for (const id of [
-  'uiLayout', 'uiLanguage', 'oracleHost', 'interface', 'hardware', 'output', 'metadata', 'assets',
+  'uiLayout', 'uiLanguage', 'oracleHost', 'interface', 'hardware', 'powerTemplate', 'output', 'metadata', 'assets',
   'useRemoteOracle', 'serverUrl', 'workerKey', 'settingsSave', 'settingsStatus', 'appVersion',
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
@@ -146,6 +146,7 @@ function options() {
     systemVersion: targetIdentityChanged ? '' : controls.consoleSelect.selectedOptions[0]?.dataset.firmware || '',
     interface: controls.interface.value.trim(),
     hardware: Number(controls.hardware.value || 0),
+    powerTemplate: controls.powerTemplate.value || 'auto',
     output: controls.output.value.trim() || 'dt_downloads',
     profileRoot: profileRoot || controls.output.value.trim() || 'dt_downloads',
     metadata: controls.metadata.value.trim(),
