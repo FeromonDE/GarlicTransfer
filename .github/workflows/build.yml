@@ -7,12 +7,30 @@ jobs:
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder-cache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      - name: Cache Electron and NSIS downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ELECTRON_CACHE }}
+            ${{ env.ELECTRON_BUILDER_CACHE }}
+          key: ${{ runner.os }}-x64-electron28.3.3-builder24.13.3-v1
+      - name: Cache bundled Python runtime
+        id: python-cache
+        uses: actions/cache@v4
+        with:
+          path: build/windows-python
+          key: ${{ runner.os }}-x64-python3.12.10-cryptography44.0.3-v1
       - name: Bundle Windows Python
+        if: steps.python-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip' -OutFile build/python-embed.zip
@@ -23,6 +41,9 @@ jobs:
             [System.IO.Compression.ZipFile]::ExtractToDirectory($_.FullName, (Resolve-Path build/windows-python).Path, $true)
           }
           Add-Content -Path build/windows-python/python312._pth -Value '..'
+      - name: Verify bundled Python
+        shell: pwsh
+        run: |
           Copy-Item -Recurse poc build/poc
           & build/windows-python/python.exe -c "import cffi, cryptography; from cryptography.hazmat.primitives import cmac; print(cryptography.__version__)"
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Python cryptography check failed' }
@@ -32,25 +53,21 @@ jobs:
       - run: npm run check
       - run: node --test tests/console_locator_flow.test.cjs tests/transfer_cleanup.test.cjs
       - run: npx electron-builder --win nsis --x64 --publish never
-      - name: Install and test packaged app
+      - name: Test packaged application
         shell: pwsh
         run: |
           $installers = @(Get-ChildItem dist/*.exe -File)
           if ($installers.Count -ne 1) { throw "Expected one EXE, found $($installers.Count)" }
-          $installer = $installers[0].FullName
-          Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$env:TEMP\smoke-install") -Wait
-          $python = "$env:TEMP\smoke-install\resources\python\python.exe"
-          $deadline = [DateTime]::UtcNow.AddSeconds(30)
-          while (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
-              if ([DateTime]::UtcNow -gt $deadline) { throw "Bundled Python not found at $python" }
-              Start-Sleep -Milliseconds 250
-          }
-          $env:PYTHONPATH = "$env:TEMP\smoke-install\resources"
+          $app = (Resolve-Path dist/win-unpacked).Path
+          $python = Join-Path $app 'resources/python/python.exe'
+          if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "Bundled Python not found at $python" }
+          if (-not (Test-Path -LiteralPath (Join-Path $app 'GarlicTransfer.exe') -PathType Leaf)) { throw 'Packaged app missing' }
+          $env:PYTHONPATH = Join-Path $app 'resources'
           & $python -c "import cffi; from cryptography.hazmat.primitives import cmac; print('CFFI and CMAC OK')"
           if ($LASTEXITCODE -ne 0) { throw 'Installed cryptography check failed' }
           & $python -c "import poc.dt_discovery, poc.dt_pair, poc.dt_backend; print('Backend imports OK')"
           if ($LASTEXITCODE -ne 0) { throw 'Installed backend check failed' }
-          $helper = "$env:TEMP\smoke-install\Garlic-Firewall-Helper.bat"
+          $helper = Join-Path $app 'Garlic-Firewall-Helper.bat'
           if (-not (Test-Path -LiteralPath $helper -PathType Leaf)) { throw 'Firewall helper missing beside GarlicTransfer.exe' }
           & $helper /help
           if ($LASTEXITCODE -ne 0) { throw "Firewall helper /help failed with exit code $LASTEXITCODE" }
@@ -60,6 +77,7 @@ jobs:
           name: GarlicTransfer-Windows-x64
           path: dist/*.exe
           if-no-files-found: error
+          compression-level: 0
 
   release:
     if: ${{ github.server_url == 'https://github.com' && startsWith(github.ref, 'refs/tags/v') }}
