@@ -30,7 +30,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Python discovery check failed' }
       - run: npm ci
       - run: npm run check
-      - run: node --test tests/console_locator_flow.test.cjs
+      - run: node --test tests/console_locator_flow.test.cjs tests/transfer_cleanup.test.cjs
       - run: npx electron-builder --win nsis --x64 --publish never
       - name: Install and test packaged app
         shell: pwsh
