@@ -32,7 +32,8 @@ function fixture(t, pendingHelper = false) {
         const child = new EventEmitter();
         child.args = args; child.command = command; child.exitCode = null;
         child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
-        child.stdin = { writable: true, write() {}, end() {} };
+        child.input = [];
+        child.stdin = { writable: true, write(value) { child.input.push(value); }, end() {} };
         child.kill = () => { child.killed = true; };
         children.push(child); return child;
       } };
@@ -49,7 +50,7 @@ function fixture(t, pendingHelper = false) {
     __dirname: path.dirname(mainPath), process, Buffer, console, setTimeout, clearTimeout,
   });
   vm.runInContext(fs.readFileSync(mainPath, 'utf8'), context, { filename: mainPath });
-  const options = { accountId: '0833114e9585c53c', hostId: 'AABBCCDDEEFF', systemVersion: '13600000', output: root, assets: root, metadata: path.join(root, 'metadata.db'),
+  const options = { accountId: '18446744073709551615', hostId: 'AABBCCDDEEFF', systemVersion: '13600000', output: root, assets: root, metadata: path.join(root, 'metadata.db'),
     useRemoteOracle: false, oracleHost: '192.168.0.42', userId: '1', userName: 'Demo', uploadKind: 'external',
     externalImage: '/staged', titleId: 'PPSA12345', localPcUploadId: 'owned-stage' };
   return { context, root, options, children, releases, helpers, resolveHelper, handlers };
@@ -114,4 +115,25 @@ test('a canceled old child cannot finish a newer transfer session', async t => {
   assert.equal(vm.runInContext('active.process', f.context), current);
   assert.equal(current.killed, undefined);
   f.context.stopActive(); current.emit('close', 0);
+});
+
+test('first browse with manual Account ID passes the exact string to Python without pairing', async t => {
+  const f = fixture(t);
+  fs.unlinkSync(f.options.metadata);
+  f.context.startDownload({ ...f.options });
+  await tick();
+  assert.equal(f.children.length, 1);
+  assert.deepEqual(Array.from(f.children[0].args), ['-u', '-m', 'poc.dt_backend', 'download', '-']);
+  assert.equal(JSON.parse(f.children[0].input[0]).accountId, '18446744073709551615');
+  assert.equal(vm.runInContext('active.kind', f.context), 'download');
+  f.context.stopActive();
+});
+
+test('first browse without an identity fails explicitly instead of opening pairing', t => {
+  const f = fixture(t);
+  fs.unlinkSync(f.options.metadata);
+  assert.throws(() => f.context.startDownload({ ...f.options, accountId: '' }), /No Account ID or existing pairing/);
+  assert.throws(() => f.context.startDownload({ ...f.options, accountId: '18446744073709551616' }), /valid unsigned decimal/);
+  assert.equal(f.children.length, 0);
+  assert.equal(vm.runInContext('active', f.context), null);
 });
