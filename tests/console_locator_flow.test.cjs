@@ -830,3 +830,27 @@ test('manual account ID is cleared for a different OFW console or changed consol
   assert.equal(input.disabled, true);
   assert.deepEqual(f.errors, []);
 });
+
+test('manual browse button separates Account ID transfer from menu pairing', async t => {
+  const f = await app(t);
+  await f.find();
+  radio(f, 'ofw', consoles[1].host).click();
+  const input = f.document.getElementById('manualAccountId');
+  const browse = f.document.getElementById('manualBrowseBtn');
+  const pair = f.document.getElementById('pairBtn');
+  let pairCalls = 0;
+  f.window.saveTransfer.pair = async () => { pairCalls++; };
+  assert.equal(browse.disabled, true);
+  input.value = '18446744073709551615';
+  input.dispatchEvent(new f.window.Event('input', { bubbles: true }));
+  assert.equal(browse.disabled, false);
+  assert.equal(pair.disabled, true);
+  pair.dispatchEvent(new f.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(pairCalls, 0);
+  browse.click();
+  await until(() => f.window.cmpFixture.calls.downloads.length === 1, 'Manual browse button did not start');
+  assert.equal(f.window.cmpFixture.calls.downloads[0].accountId, '18446744073709551615');
+  assert.equal(f.document.getElementById('downloadPage').hidden, false);
+  assert.equal(f.document.getElementById('pairingModal').open, false);
+  assert.deepEqual(f.errors, []);
+});
