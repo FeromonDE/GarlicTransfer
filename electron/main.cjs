@@ -102,15 +102,22 @@ function startDownload(options) {
   // The renderer never chooses a local credential file. Resolve it only from
   // the console identity reported by discovery, inside the main process.
   delete options.approvalPrefixPath;
+  const manualId = String(options.accountId ?? '').trim();
   let paired = null;
-  if (options.hostId && options.systemVersion) {
+  if (manualId) {
+    if (typeof options.accountId !== 'string' || !/^[0-9]{1,20}$/.test(manualId) ||
+        BigInt(manualId) === 0n || BigInt(manualId) > 0xffffffffffffffffn) {
+      throw new Error('Enter a valid unsigned decimal PSN account ID.');
+    }
+    options.accountId = manualId;
+    send('log', { message: '[identity] Using manual Account ID (no menu pairing).' });
+  } else if (options.hostId && options.systemVersion) {
     paired = existingPairingPrefix(app.getPath('userData'), options);
     if (paired) options.approvalPrefixPath = paired;
   }
   const metadataPath = resolveMetadata(options.metadata, options.output || 'dt_downloads');
-  if (!String(options.accountId || '').trim() && !paired && !fs.existsSync(metadataPath)) {
-    startPairing(options);
-    return;
+  if (!manualId && !paired && !fs.existsSync(metadataPath)) {
+    throw new Error('No Account ID or existing pairing found. Enter the decimal PSN account ID on Console, or explicitly choose menu pairing.');
   }
   const session = { kind: 'download', completed: false, awaitingSelection: false, process: null };
   active = session;

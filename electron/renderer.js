@@ -11,7 +11,7 @@ for (const id of [
   'firewallSettings', 'firewallHelperBtn', 'firewallStatus',
   'addExternalFolderBtn', 'externalUploadControls', 'addExternalSaveBtn', 'addExternalZipBtn', 'exportZipBtn', 'externalTitleId', 'userSelect', 'userSelectLabel', 'uploadSaveSelect', 'uploadSaveSelectLabel', 'confirmUploadBtn', 'sourcePort', 'dataPort', 'discoveryPort', 'uploadDisplayName',
   'downloadBtn', 'downloadSelectedBtn', 'uploadBtn', 'finishBtn', 'cancelBtn', 'powerBtn', 'status', 'entries', 'appEntries', 'profileEntries', 'mediaEntries', 'otherEntries', 'log', 'saveSearch',
-  'consoleSelect', 'consoleLocatorRows', 'jbFirmwareLimit', 'transferConsoleHost', 'transferConsoleLabel', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'manualAccountId', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
+  'consoleSelect', 'consoleLocatorRows', 'jbFirmwareLimit', 'transferConsoleHost', 'transferConsoleLabel', 'discoverBtn', 'manualHost', 'manualConnectBtn', 'pairBtn', 'pairingState', 'manualAccountId', 'manualBrowseBtn', 'preferIpv6', 'selectAllEntries', 'entryCount', 'powerModal',
   'pairingModal', 'pairingCancelBtn', 'uploadModal', 'uploadModalCloseBtn',
   'browseLocalBtn', 'localBrowser', 'localEntries', 'importModal', 'importWarning', 'confirmImportBtn', 'cancelImportBtn',
 ]) controls[id] = byId(id);
@@ -185,6 +185,14 @@ function refreshManualAccountControl() {
     manualAccountConsole = key;
   }
   controls.manualAccountId.disabled = !key || consoleSelectionLocked();
+  refreshAccountActionButtons();
+}
+
+function refreshAccountActionButtons() {
+  const locked = !controls.consoleSelect.value || targetIdentityChanged || consoleSelectionLocked();
+  const hasManual = Boolean(controls.manualAccountId.value.trim());
+  controls.manualBrowseBtn.disabled = locked || !hasManual;
+  controls.pairBtn.disabled = locked || hasManual || !window.saveTransfer.pairingAvailable;
 }
 
 function formatFirmware(value) {
@@ -438,7 +446,7 @@ async function refreshPairingStatus() {
   const identity = { hostId: selected?.dataset.hostId || '', systemVersion: selected?.dataset.firmware || '' };
   const supported = window.saveTransfer.pairingAvailable && Boolean(selected?.value);
   controls.pairingState.classList.remove('paired');
-  controls.pairBtn.disabled = accountClosing || !supported || Boolean(activeTransfer) || browseSessionActive || targetIdentityChanged;
+  refreshAccountActionButtons();
   if (targetIdentityChanged) {
     controls.pairingState.textContent = uiText('Choose the OFW console again to confirm its identity.');
     return;
@@ -517,7 +525,6 @@ function busy(value, { keepDialogs = false } = {}) {
   controls.uploadSaveSelect.disabled = disabled;
   controls.powerBtn.disabled = accountClosing;
   for (const button of document.querySelectorAll('.local-action')) button.disabled = disabled;
-  controls.pairBtn.disabled = !window.saveTransfer.pairingAvailable || !controls.consoleSelect.value || disabled || browseSessionActive || targetIdentityChanged;
   controls.cancelBtn.disabled = !value;
   controls.consoleSelect.disabled = disabled || browseSessionActive;
   refreshManualAccountControl();
@@ -807,8 +814,8 @@ function renderEntries() {
 }
 controls.saveSearch.addEventListener('input', renderEntries);
 
-async function browseSaves(forUpload = false) {
-  if (accountClosing) return;
+async function browseSaves(forUpload = false, requireManual = false) {
+  if (accountClosing || activeTransfer) return;
   if (!forUpload && browseSessionActive) {
     status('The download session is already open. Select saves from the browser.');
     return;
@@ -819,6 +826,11 @@ async function browseSaves(forUpload = false) {
     return;
   }
   if (!applyManualAccountId(current)) return;
+  if (requireManual && !current.accountId) {
+    status('Enter the decimal PSN account ID before browsing.');
+    return;
+  }
+  if (current.accountId) appendLog('[identity] Manual Account ID selected; menu pairing is not requested.');
   pendingBrowserHost = current.clientHost;
   activeTransfer = forUpload ? 'upload-metadata' : 'browse';
   busy(true);
@@ -1209,8 +1221,23 @@ async function loadSettings() {
 controls.consoleSelect.addEventListener('change', applyConsoleProfile);
 loadSettings();
 
+controls.manualAccountId.addEventListener('input', refreshAccountActionButtons);
+function browseUsingManualId() {
+  if (controls.manualBrowseBtn.disabled) return;
+  showPage('download');
+  void browseSaves(false, true);
+}
+controls.manualBrowseBtn.addEventListener('click', browseUsingManualId);
+controls.manualAccountId.addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); browseUsingManualId(); }
+});
+
 controls.pairBtn.addEventListener('click', async () => {
-  if (accountClosing) return;
+  if (accountClosing || activeTransfer || browseSessionActive) return;
+  if (controls.manualAccountId.value.trim()) {
+    status('Use Browse using Account ID, or clear the ID to use menu pairing.');
+    return;
+  }
   const current = options();
   if (!current.clientHost) {
     status('Discover and select the PS5 first.');

@@ -110,9 +110,13 @@
           <label for="manualAccountId">PSN account ID (optional, decimal)
             <input id="manualAccountId" type="text" inputmode="numeric" spellcheck="false" autocomplete="off" placeholder="Unsigned decimal account ID" aria-describedby="manualAccountHint" disabled>
           </label>
-          <p id="manualAccountHint" class="card-hint">Use the account ID of the source or receiving PS5, not the JB helper. Leave blank to use existing pairing or metadata, or to pair this PS5. The ID is not saved in settings.</p>
+          <p id="manualAccountHint" class="card-hint">Enter the account ID of the selected OFW PS5, not the JB helper, then click Browse using Account ID. No menu pairing is needed for this mode. The ID is not saved in settings.</p>
+          <div class="button-row">
+            <button id="manualBrowseBtn" class="btn-primary" type="button" disabled>Browse using Account ID</button>
+          </div>
+          <p class="card-hint">Alternative: clear the Account ID to use menu pairing.</p>
           <div class="pair-group">
-            <button id="pairBtn" type="button" disabled>Pair this PS5</button>
+            <button id="pairBtn" type="button" disabled>Pair this PS5 (menu pairing)</button>
             <span id="pairingState" class="pairing-hint">Discover a PS5 to check pairing.</span>
           </div>
         </div>
