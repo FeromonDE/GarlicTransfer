@@ -51,6 +51,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Python discovery check failed' }
       - run: npm ci
       - run: npm run check
+      - name: Test power request template
+        shell: pwsh
+        run: build/windows-python/python.exe -m unittest discover -s tests -p test_power_identity.py
       - run: node --test tests/console_locator_flow.test.cjs tests/transfer_cleanup.test.cjs
       - run: npx electron-builder --win nsis --x64 --publish never
       - name: Test packaged application
